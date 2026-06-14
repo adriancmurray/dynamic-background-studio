@@ -132,9 +132,17 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       return new Response('Cloudflare Workers AI binding is not configured', { status: 500 })
     }
 
-    const { prompt, galleryPresets, model: requestedModel } = await request.json<{ prompt: string; galleryPresets?: any[]; model?: string }>().catch(() => ({ prompt: '', galleryPresets: [], model: '' }))
-    if (!prompt) {
-      return new Response('Prompt is required', { status: 400 })
+    const body = await request.json<{
+      prompt?: string;
+      messages?: Array<{ role: string; content: string }>;
+      galleryPresets?: any[];
+      model?: string;
+    }>().catch(() => ({}));
+
+    const { prompt, messages, galleryPresets, model: requestedModel } = body;
+
+    if (!prompt && (!messages || messages.length === 0)) {
+      return new Response('Prompt or messages is required', { status: 400 });
     }
 
     let galleryContext = ''
@@ -157,11 +165,27 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
     ]
     const model = allowedModels.includes(requestedModel || '') ? requestedModel! : '@cf/google/gemma-4-26b-a4b-it'
 
+    // Construct multi-turn messages payload
+    const messagesPayload = [
+      { role: 'system', content: SYSTEM_INSTRUCTION + galleryContext }
+    ];
+
+    if (messages && messages.length > 0) {
+      for (const m of messages) {
+        messagesPayload.push({
+          role: m.role === 'assistant' ? 'assistant' : 'user',
+          content: m.content
+        });
+      }
+    } else if (prompt) {
+      messagesPayload.push({
+        role: 'user',
+        content: `Create a background for: "${prompt}"`
+      });
+    }
+
     const response = await env.AI.run(model, {
-      messages: [
-        { role: 'system', content: SYSTEM_INSTRUCTION + galleryContext },
-        { role: 'user', content: `Create a background for: "${prompt}"` }
-      ],
+      messages: messagesPayload,
       response_format: { type: 'json_object' }
     })
 

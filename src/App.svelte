@@ -1,6 +1,6 @@
 <script lang="ts">
   import { onMount } from 'svelte'
-  import { slide, fade, scale } from 'svelte/transition'
+  import { slide, fade, scale, fly } from 'svelte/transition'
   import {
     Sparkles,
     Sliders,
@@ -21,6 +21,9 @@
     Search,
     RefreshCw,
     ExternalLink,
+    MessageSquare,
+    Send,
+    Trash2,
   } from '@lucide/svelte'
 
   // Import dynamic backgrounds
@@ -40,7 +43,7 @@
   import { presetCatalog, type BackgroundPreset } from './lib/presetCatalog'
   import { componentSources } from './lib/componentSources'
   import { generateSvelteUseCode } from './lib/codeGenerator'
-  import { askAIDesigner, type AIConfig } from './lib/aiDesigner'
+  import { askAIDesigner, type AIConfig, type ChatMessage } from './lib/aiDesigner'
   import { fetchCommunityGallery, type CommunityPreset } from './lib/galleryFetcher'
 
   // --- Svelte 5 Runes for App State ---
@@ -122,6 +125,15 @@
   )
   let cfModel = $state<'@cf/google/gemma-4-26b-a4b-it' | '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b' | '@cf/meta/llama-3.3-70b-instruct-fp8-fast' | '@cf/meta/llama-3.1-8b-instruct-fp8'>(
     (typeof localStorage !== 'undefined' && localStorage.getItem('ai-cf-model') as any) || '@cf/google/gemma-4-26b-a4b-it'
+  )
+  let geminiModel = $state(
+    (typeof localStorage !== 'undefined' && localStorage.getItem('ai-gemini-model')) || 'gemini-2.0-flash'
+  )
+  let chatMessages = $state<ChatMessage[]>(
+    (typeof localStorage !== 'undefined' && JSON.parse(localStorage.getItem('studio-chat-messages') || '[]')) || []
+  )
+  let showChat = $state(
+    (typeof localStorage !== 'undefined' && localStorage.getItem('studio-show-chat') === 'true') || false
   )
 
   let githubUsername = $state(
@@ -263,6 +275,9 @@
   $effect(() => { localStorage.setItem('studio-gallery-repo', galleryRepo) })
   $effect(() => { localStorage.setItem('studio-github-username', githubUsername) })
   $effect(() => { localStorage.setItem('studio-local-presets', JSON.stringify(localPresets)) })
+  $effect(() => { localStorage.setItem('ai-gemini-model', geminiModel) })
+  $effect(() => { localStorage.setItem('studio-chat-messages', JSON.stringify(chatMessages)) })
+  $effect(() => { localStorage.setItem('studio-show-chat', showChat.toString()) })
 
   function toggleTheme() {
     theme = theme === 'dark' ? 'light' : 'dark'
@@ -298,28 +313,104 @@
     })
   }
 
-  async function handleAiSubmit(e: SubmitEvent) {
-    e.preventDefault()
-    if (!aiPrompt.trim()) return
+  let chatFeedContainer = $state<HTMLElement | null>(null)
+
+  function scrollToBottom() {
+    if (typeof window !== 'undefined') {
+      setTimeout(() => {
+        if (chatFeedContainer) {
+          chatFeedContainer.scrollTop = chatFeedContainer.scrollHeight
+        }
+      }, 50)
+    }
+  }
+
+  // Scroll to bottom when message list or loading state changes
+  $effect(() => {
+    if (chatMessages.length || aiLoading) {
+      scrollToBottom()
+    }
+  })
+
+  async function sendChatMessage(text: string) {
+    if (!text.trim()) return
+    
+    const userMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: text,
+      timestamp: Date.now()
+    }
+    
+    chatMessages = [...chatMessages, userMsg]
     aiLoading = true
     aiError = ''
+    showChat = true // Open chat drawer automatically
+    
     try {
       const config: AIConfig = {
         provider: aiProvider,
         apiKey: aiApiKey,
         ollamaModel,
         ollamaUrl,
-        cfModel
+        cfModel,
+        geminiModel
       }
-      const response = await askAIDesigner(aiPrompt, config, communityPresets)
+      
+      const response = await askAIDesigner(chatMessages, config, communityPresets)
+      
+      const assistantMsg: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: response.explanation,
+        presetId: response.presetId,
+        config: response.config,
+        timestamp: Date.now()
+      }
+      
+      chatMessages = [...chatMessages, assistantMsg]
+      
+      // Load the generated preset/config
       activePresetId = response.presetId
       configs[response.presetId] = { ...configs[response.presetId], ...response.config }
-      aiPrompt = ''
-      islandMode = 'collapsed' // Return to collapsed on success
+      
+      // Collapse settings/etc panel so user can see background
+      islandMode = 'collapsed'
+      
     } catch (err: any) {
       aiError = err.message || 'Error generating background'
+      
+      const errorMsg: ChatMessage = {
+        id: crypto.randomUUID(),
+        role: 'assistant',
+        content: err.message || 'Failed to design. Please check your model key or settings.',
+        timestamp: Date.now(),
+        isError: true
+      }
+      
+      chatMessages = [...chatMessages, errorMsg]
     } finally {
       aiLoading = false
+    }
+  }
+
+  async function handleAiSubmit(e: SubmitEvent) {
+    e.preventDefault()
+    if (!aiPrompt.trim()) return
+    const text = aiPrompt
+    aiPrompt = ''
+    await sendChatMessage(text)
+  }
+
+  function clearChatHistory() {
+    chatMessages = []
+    aiError = ''
+  }
+
+  function restoreChatMessagePreset(msg: ChatMessage) {
+    if (msg.presetId && msg.config) {
+      activePresetId = msg.presetId
+      configs[msg.presetId] = { ...configs[msg.presetId], ...msg.config }
     }
   }
 
@@ -943,17 +1034,35 @@
               {/if}
 
               {#if aiProvider === 'gemini'}
-                <div class="flex flex-col gap-1">
-                  <span class="font-medium text-neutral-800 dark:text-neutral-300 flex justify-between">
-                    <span>API Key</span>
-                    <a href="https://aistudio.google.com" target="_blank" rel="noreferrer" class="text-[10px] text-blue-500 hover:underline">Get Key</a>
-                  </span>
-                  <input 
-                    type="password" 
-                    placeholder="Google AI Studio Key"
-                    bind:value={aiApiKey}
-                    class="px-2.5 py-1.5 bg-neutral-900/5 dark:bg-white/5 border border-white/10 rounded-lg text-neutral-900 dark:text-neutral-100 select-text cursor-text"
-                  />
+                <div class="flex flex-col gap-2">
+                  <div class="flex flex-col gap-1">
+                    <span class="font-medium text-neutral-800 dark:text-neutral-300 flex justify-between">
+                      <span>API Key</span>
+                      <a href="https://aistudio.google.com" target="_blank" rel="noreferrer" class="text-[10px] text-blue-500 hover:underline">Get Key</a>
+                    </span>
+                    <input 
+                      type="password" 
+                      placeholder="Google AI Studio Key"
+                      bind:value={aiApiKey}
+                      class="px-2.5 py-1.5 bg-neutral-900/5 dark:bg-white/5 border border-white/10 rounded-lg text-neutral-900 dark:text-neutral-100 select-text cursor-text"
+                    />
+                  </div>
+
+                  <div class="flex flex-col gap-1">
+                    <span class="font-medium text-neutral-800 dark:text-neutral-300">Gemini Model</span>
+                    <select 
+                      bind:value={geminiModel}
+                      class="px-2.5 py-1.5 bg-neutral-900/5 dark:bg-white/5 border border-white/10 rounded-lg text-neutral-900 dark:text-neutral-100 cursor-pointer"
+                    >
+                      <option value="gemini-2.5-flash">Gemini 2.5 Flash (Default - Fast & Smart)</option>
+                      <option value="gemini-2.5-pro">Gemini 2.5 Pro (Reasoning & Complex)</option>
+                      <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
+                      <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite</option>
+                      <option value="gemini-1.5-flash">Gemini 1.5 Flash (Legacy)</option>
+                      <option value="gemma-2-27b-it">Gemma 2 27B</option>
+                    </select>
+                  </div>
+
                   <span class="text-[10px] text-neutral-500">
                     🔒 Stored locally in your browser. API calls go directly to Google.
                   </span>
@@ -1161,6 +1270,13 @@
         >
           <Settings size={14} />
         </button>
+        <button 
+          class="p-2 rounded-full transition-all hover:scale-105 active:scale-90 cursor-pointer flex items-center justify-center {showChat ? 'bg-blue-600 text-white shadow-md' : 'text-neutral-800 dark:text-neutral-300 hover:bg-neutral-950/5 dark:hover:bg-white/10'}"
+          onclick={() => showChat = !showChat}
+          title="Toggle Chat Drawer"
+        >
+          <MessageSquare size={14} />
+        </button>
       </div>
     </div>
   </div>
@@ -1203,6 +1319,153 @@
             Save Design
           </button>
         </div>
+      </div>
+    </div>
+  {/if}
+
+  <!-- AI Chat Drawer -->
+  {#if showChat}
+    <div 
+      class="absolute inset-y-0 left-0 z-40 w-[380px] max-w-full bg-white/70 dark:bg-black/55 backdrop-blur-3xl border-r border-neutral-200/50 dark:border-white/10 flex flex-col shadow-2xl overflow-hidden transition-all duration-300 animate-scale-in"
+      transition:fly={{ x: -380, duration: 300 }}
+    >
+      <!-- Chat Header -->
+      <div class="px-4 py-3 border-b border-neutral-200/50 dark:border-white/10 flex items-center justify-between bg-neutral-50/50 dark:bg-neutral-900/50">
+        <div class="flex items-center gap-2">
+          <div class="p-1 rounded-lg bg-blue-600 text-white flex items-center justify-center">
+            <MessageSquare size={13} />
+          </div>
+          <span class="font-semibold text-xs text-neutral-900 dark:text-white uppercase tracking-wider font-mono">
+            AI Design Partner
+          </span>
+        </div>
+        <div class="flex items-center gap-1">
+          {#if chatMessages.length > 0}
+            <button 
+              class="p-1.5 rounded-lg text-neutral-500 hover:text-red-500 hover:bg-neutral-900/5 dark:hover:bg-white/5 transition-all cursor-pointer flex items-center justify-center"
+              onclick={clearChatHistory}
+              title="Clear Chat History"
+            >
+              <Trash2 size={13} />
+            </button>
+          {/if}
+          <button 
+            class="p-1.5 rounded-lg text-neutral-500 hover:text-neutral-800 dark:hover:text-white hover:bg-neutral-900/5 dark:hover:bg-white/5 transition-all cursor-pointer flex items-center justify-center"
+            onclick={() => showChat = false}
+            title="Hide Chat"
+          >
+            <X size={13} />
+          </button>
+        </div>
+      </div>
+
+      <!-- Chat Messages Feed -->
+      <div 
+        bind:this={chatFeedContainer}
+        class="flex-1 overflow-y-auto p-4 space-y-3.5 select-text"
+      >
+        {#if chatMessages.length === 0}
+          <div class="h-full flex flex-col items-center justify-center text-center p-6 text-neutral-500">
+            <div class="p-3.5 rounded-full bg-neutral-100 dark:bg-neutral-900 mb-3 text-neutral-400">
+              <MessageSquare size={24} />
+            </div>
+            <p class="text-xs font-medium text-neutral-800 dark:text-neutral-300">Start a conversation</p>
+            <p class="text-[10px] max-w-[200px] mt-1 leading-normal">
+              Ask the AI to design a background, customize colors, speed, or mix existing components!
+            </p>
+          </div>
+        {:else}
+          {#each chatMessages as msg (msg.id)}
+            <div class="flex flex-col gap-1 {msg.role === 'user' ? 'items-end' : 'items-start'}">
+              <!-- Bubble -->
+              <div 
+                class="max-w-[85%] px-3.5 py-2.5 rounded-2xl text-xs leading-normal relative transition-all duration-300
+                  {msg.role === 'user' 
+                    ? 'bg-blue-600 text-white rounded-tr-none shadow-sm' 
+                    : msg.isError 
+                      ? 'bg-red-500/10 dark:bg-red-500/15 border border-red-500/20 text-red-650 dark:text-red-400 rounded-tl-none'
+                      : 'bg-neutral-100 dark:bg-white/5 border border-neutral-200/50 dark:border-white/5 text-neutral-800 dark:text-neutral-200 rounded-tl-none'}"
+              >
+                {#if msg.isError}
+                  <div class="flex items-start gap-1.5">
+                    <span class="mt-0.5">⚠️</span>
+                    <span>{msg.content}</span>
+                  </div>
+                {:else}
+                  {msg.content}
+                {/if}
+              </div>
+
+              <!-- Restore Action Card (if assistant message has preset configs) -->
+              {#if msg.role === 'assistant' && msg.presetId && msg.config}
+                <div 
+                  class="w-full max-w-[85%] mt-1.5 p-2 rounded-xl bg-neutral-50 dark:bg-white/5 border border-neutral-200/30 dark:border-white/5 flex items-center justify-between gap-3 text-[10px]"
+                  transition:fade
+                >
+                  <div class="flex items-center gap-1.5 text-neutral-600 dark:text-neutral-400">
+                    <div class="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+                    <span class="font-medium capitalize truncate max-w-[100px]">{msg.presetId}</span>
+                  </div>
+                  <button 
+                    class="px-2 py-1 rounded bg-neutral-900/5 dark:bg-white/5 hover:bg-neutral-900/10 dark:hover:bg-white/10 hover:text-neutral-900 dark:hover:text-white transition-all text-neutral-500 font-medium flex items-center gap-1 cursor-pointer"
+                    onclick={() => restoreChatMessagePreset(msg)}
+                    title="Apply this exact design state"
+                  >
+                    <RotateCcw size={10} />
+                    <span>Restore Design</span>
+                  </button>
+                </div>
+              {/if}
+
+              <!-- Timestamp -->
+              <span class="text-[9px] text-neutral-400 dark:text-neutral-600 px-1 font-mono">
+                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </div>
+          {/each}
+        {/if}
+
+        <!-- Typing indicator -->
+        {#if aiLoading}
+          <div class="flex flex-col gap-1 items-start" transition:fade>
+            <div class="px-3.5 py-3 rounded-2xl rounded-tl-none bg-neutral-100 dark:bg-white/5 border border-neutral-200/50 dark:border-white/5 flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-neutral-500 animate-bounce" style="animation-delay: 0ms"></span>
+              <span class="w-1.5 h-1.5 rounded-full bg-neutral-500 animate-bounce" style="animation-delay: 150ms"></span>
+              <span class="w-1.5 h-1.5 rounded-full bg-neutral-500 animate-bounce" style="animation-delay: 300ms"></span>
+            </div>
+          </div>
+        {/if}
+      </div>
+
+      <!-- Chat Footer Input Area -->
+      <div class="p-3 border-t border-neutral-200/50 dark:border-white/10 bg-neutral-50/50 dark:bg-neutral-900/50">
+        <form 
+          onsubmit={(e) => {
+            e.preventDefault()
+            const input = e.currentTarget.elements.namedItem('chatPrompt') as HTMLInputElement
+            if (input && input.value.trim()) {
+              sendChatMessage(input.value)
+              input.value = ''
+            }
+          }}
+          class="flex gap-2"
+        >
+          <input 
+            name="chatPrompt"
+            type="text" 
+            placeholder="Type design request..."
+            disabled={aiLoading}
+            class="flex-1 px-3 py-2 text-xs bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-white/10 rounded-xl text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 select-text cursor-text focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
+            autocomplete="off"
+          />
+          <button 
+            type="submit" 
+            disabled={aiLoading}
+            class="p-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition-all disabled:opacity-50 disabled:bg-blue-600 flex items-center justify-center cursor-pointer shadow"
+          >
+            <Send size={12} />
+          </button>
+        </form>
       </div>
     </div>
   {/if}

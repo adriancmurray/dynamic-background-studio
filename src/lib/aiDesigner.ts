@@ -4,6 +4,7 @@ export interface AIConfig {
   ollamaModel?: string
   ollamaUrl?: string
   cfModel?: string
+  geminiModel?: string
 }
 
 export interface AIResponse {
@@ -130,15 +131,23 @@ Here are the available presets and their allowed variables (do not output variab
 
 Be creative! Select the preset that best fits the request. Output ONLY valid JSON inside markdown block \`\`\`json.`;
 
+export interface ChatMessage {
+  id: string
+  role: 'user' | 'assistant'
+  content: string
+  presetId?: string
+  config?: Record<string, any>
+  timestamp: number
+  isError?: boolean
+}
+
 import type { CommunityPreset } from './galleryFetcher'
 
 export async function askAIDesigner(
-  prompt: string,
+  messages: ChatMessage[],
   aiConfig: AIConfig,
   galleryPresets?: CommunityPreset[]
 ): Promise<AIResponse> {
-  const userMessage = `Create a background for this prompt: "${prompt}".`
-
   let galleryContext = ''
   if (galleryPresets && galleryPresets.length > 0) {
     galleryContext = `\n\nThere is also a Community Gallery of custom pre-made designs created by users.
@@ -155,9 +164,33 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
       throw new Error('API Key is required for Google AI Studio (Gemini).')
     }
 
-    // Try Gemma 4 first, fallback to Gemini 1.5 Flash if needed
-    const models = ['gemma4-26b-it', 'gemma4-12b-it', 'gemini-1.5-flash']
+    // Standard available Gemini API models with user preference prioritized
+    const selectedModel = aiConfig.geminiModel || 'gemini-2.0-flash'
+    const models = Array.from(new Set([
+      selectedModel,
+      'gemini-2.5-flash',
+      'gemini-2.0-flash',
+      'gemini-2.0-flash-lite',
+      'gemini-1.5-flash',
+      'gemma-2-27b-it'
+    ]))
     let lastError = ''
+
+    // Map chat history for Gemini API
+    const contents = messages.filter(m => !m.isError).map(msg => ({
+      role: msg.role === 'assistant' ? 'model' : 'user',
+      parts: [
+        {
+          text: msg.role === 'assistant'
+            ? JSON.stringify({
+                presetId: msg.presetId,
+                config: msg.config,
+                explanation: msg.content
+              })
+            : msg.content
+        }
+      ]
+    }))
 
     for (const model of models) {
       try {
@@ -168,12 +201,10 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
             'Content-Type': 'application/json',
           },
           body: JSON.stringify({
-            contents: [
-              {
-                role: 'user',
-                parts: [{ text: `${SYSTEM_INSTRUCTION}${galleryContext}\n\n${userMessage}` }],
-              },
-            ],
+            contents,
+            systemInstruction: {
+              parts: [{ text: SYSTEM_INSTRUCTION + galleryContext }]
+            },
             generationConfig: {
               responseMimeType: 'application/json',
             },
@@ -210,6 +241,16 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
     const url = `${aiConfig.ollamaUrl || 'http://localhost:11434'}/api/chat`
     const model = aiConfig.ollamaModel || 'gemma4'
 
+    const messagesPayload = [
+      { role: 'system', content: SYSTEM_INSTRUCTION + galleryContext },
+      ...messages.filter(m => !m.isError).map(msg => ({
+        role: msg.role === 'assistant' ? 'assistant' : 'user',
+        content: msg.role === 'assistant' 
+          ? JSON.stringify({ presetId: msg.presetId, config: msg.config, explanation: msg.content })
+          : msg.content
+      }))
+    ]
+
     const response = await fetch(url, {
       method: 'POST',
       headers: {
@@ -217,10 +258,7 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
       },
       body: JSON.stringify({
         model,
-        messages: [
-          { role: 'system', content: SYSTEM_INSTRUCTION + galleryContext },
-          { role: 'user', content: userMessage },
-        ],
+        messages: messagesPayload,
         stream: false,
         format: 'json',
       }),
@@ -241,13 +279,24 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
     throw new Error('Response JSON from Ollama is invalid')
 
   } else if (aiConfig.provider === 'workers-ai') {
+    const messagesPayload = messages.filter(m => !m.isError).map(msg => ({
+      role: msg.role === 'assistant' ? 'assistant' : 'user',
+      content: msg.role === 'assistant' 
+        ? JSON.stringify({ presetId: msg.presetId, config: msg.config, explanation: msg.content })
+        : msg.content
+    }))
+
     // Call our Cloudflare serverless proxy
     const response = await fetch('/api/generate', {
       method: 'POST',
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ prompt, galleryPresets, model: aiConfig.cfModel }),
+      body: JSON.stringify({
+        messages: messagesPayload,
+        galleryPresets,
+        model: aiConfig.cfModel
+      }),
     })
 
     if (!response.ok) {

@@ -25,6 +25,7 @@
     Send,
     Trash2,
     Plus,
+    User,
   } from '@lucide/svelte'
 
   // Import dynamic backgrounds
@@ -133,6 +134,7 @@
   let chatMessages = $state<ChatMessage[]>(
     (typeof localStorage !== 'undefined' && JSON.parse(localStorage.getItem('studio-chat-messages') || '[]')) || []
   )
+  const hasReferenceInHistory = $derived(chatMessages.some(m => m.config !== undefined))
   let showChat = $state(
     (typeof localStorage !== 'undefined' && localStorage.getItem('studio-show-chat') === 'true') || false
   )
@@ -465,6 +467,7 @@
       islandMode = 'collapsed'
     } else {
       islandMode = mode
+      showChat = false // Close chat when expanding other tools
     }
   }
 
@@ -644,6 +647,160 @@
       Background Studio
     </span>
   </div>
+
+  <!-- Floating AI Chat Feed (Anchored above the bottom Command Center) -->
+  {#if showChat}
+    <div 
+      class="fixed bottom-[136px] left-1/2 -translate-x-1/2 z-20 w-[92%] max-w-2xl bg-white/60 dark:bg-black/45 backdrop-blur-2xl border border-neutral-200/50 dark:border-white/10 rounded-3xl shadow-xl flex flex-col overflow-hidden max-h-[50vh] transition-all duration-300 select-text"
+      transition:fly={{ y: 20, duration: 250 }}
+    >
+      <!-- Chat Header -->
+      <div class="px-4 py-2.5 border-b border-neutral-200/50 dark:border-white/10 flex items-center justify-between bg-neutral-50/50 dark:bg-neutral-900/50 select-none">
+        <div class="flex items-center gap-1.5">
+          <div class="p-1 rounded-md bg-blue-600 text-white flex items-center justify-center">
+            <MessageSquare size={11} />
+          </div>
+          <span class="font-bold text-[10px] text-neutral-800 dark:text-white uppercase tracking-wider font-mono">
+            AI Design Session
+          </span>
+        </div>
+        <div class="flex items-center gap-1.5">
+          <button 
+            class="px-2.5 py-1 rounded-lg text-neutral-600 dark:text-neutral-300 hover:bg-neutral-900/5 dark:hover:bg-white/5 transition-all cursor-pointer flex items-center gap-1 text-[10px] font-semibold font-mono border border-neutral-200/40 dark:border-white/5 shadow-sm bg-neutral-900/5 dark:bg-white/5"
+            onclick={clearChatHistory}
+            title="Start New Chat"
+          >
+            <Plus size={10} />
+            <span>New Chat</span>
+          </button>
+          
+          {#if chatMessages.length > 0}
+            <button 
+              class="p-1.5 rounded-lg text-neutral-500 hover:text-red-500 hover:bg-neutral-900/5 dark:hover:bg-white/5 transition-all cursor-pointer flex items-center justify-center"
+              onclick={clearChatHistory}
+              title="Clear Chat History"
+            >
+              <Trash2 size={12} />
+            </button>
+          {/if}
+          <button 
+            class="p-1.5 rounded-lg text-neutral-500 hover:text-neutral-800 dark:hover:text-white hover:bg-neutral-900/5 dark:hover:bg-white/5 transition-all cursor-pointer flex items-center justify-center"
+            onclick={() => showChat = false}
+            title="Hide Chat"
+          >
+            <X size={12} />
+          </button>
+        </div>
+      </div>
+
+      <!-- Chat Messages Feed -->
+      <div 
+        bind:this={chatFeedContainer}
+        class="flex-1 overflow-y-auto p-4 space-y-3.5 select-text"
+      >
+        {#if chatMessages.length === 0}
+          <div class="h-full flex flex-col items-center justify-center text-center p-6 text-neutral-500 my-4">
+            <div class="p-3 rounded-full bg-neutral-100 dark:bg-neutral-900 mb-2.5 text-neutral-400">
+              <MessageSquare size={20} />
+            </div>
+            <p class="text-xs font-semibold text-neutral-800 dark:text-neutral-300">AI Design Partner</p>
+            <p class="text-[10px] max-w-[200px] mt-1 leading-normal mb-4">
+              Describe your dream aesthetic, or customize your existing canvas with AI!
+            </p>
+            
+            <div class="flex flex-col gap-2 w-full max-w-[250px]">
+              <button 
+                class="px-3.5 py-2 text-[10px] font-semibold text-left rounded-xl border border-neutral-200 dark:border-white/10 hover:bg-neutral-900/5 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-all cursor-pointer flex items-center gap-2 bg-white/40 dark:bg-black/10 shadow-sm"
+                onclick={() => {
+                  const input = document.getElementsByName('chatPrompt')[0] as HTMLInputElement;
+                  if (input) input.focus();
+                }}
+              >
+                <span>✨</span>
+                <span>Create new design from scratch</span>
+              </button>
+              <button 
+                class="px-3.5 py-2 text-[10px] font-semibold text-left rounded-xl border border-neutral-200 dark:border-white/10 hover:bg-neutral-900/5 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-all cursor-pointer flex items-center gap-2 bg-white/40 dark:bg-black/10 shadow-sm"
+                onclick={attachCurrentCanvasMessage}
+              >
+                <span>✏️</span>
+                <span>Modify current background</span>
+              </button>
+            </div>
+          </div>
+        {:else}
+          {#each chatMessages as msg (msg.id)}
+            <div class="flex flex-col gap-1 {msg.role === 'user' ? 'items-end' : 'items-start'}">
+              <!-- Bubble -->
+              {#if msg.role === 'user' && msg.config}
+                <div 
+                  class="max-w-[85%] px-3.5 py-2 rounded-2xl text-xs leading-normal relative transition-all duration-300 bg-blue-500/10 dark:bg-blue-500/20 border border-blue-500/20 text-blue-600 dark:text-blue-400 rounded-tr-none flex items-center gap-2 shadow-sm font-sans"
+                >
+                  <Layers size={11} />
+                  <span>Referencing active <strong class="capitalize font-mono font-bold">{msg.presetId}</strong> design</span>
+                </div>
+              {:else}
+                <div 
+                  class="max-w-[85%] px-3.5 py-2.5 rounded-2xl text-xs leading-normal relative transition-all duration-300
+                    {msg.role === 'user' 
+                      ? 'bg-blue-600 text-white rounded-tr-none shadow-sm' 
+                      : msg.isError 
+                        ? 'bg-red-500/10 dark:bg-red-500/15 border border-red-500/20 text-red-650 dark:text-red-400 rounded-tl-none'
+                        : 'bg-neutral-100 dark:bg-white/5 border border-neutral-200/50 dark:border-white/5 text-neutral-800 dark:text-neutral-200 rounded-tl-none'}"
+                >
+                  {#if msg.isError}
+                    <div class="flex items-start gap-1.5">
+                      <span class="mt-0.5">⚠️</span>
+                      <span>{msg.content}</span>
+                    </div>
+                  {:else}
+                    {msg.content}
+                  {/if}
+                </div>
+              {/if}
+
+              <!-- Restore Action Card (if assistant message has preset configs) -->
+              {#if msg.role === 'assistant' && msg.presetId && msg.config}
+                <div 
+                  class="w-full max-w-[85%] mt-1.5 p-2 rounded-xl bg-neutral-50/50 dark:bg-white/5 border border-neutral-200/30 dark:border-white/5 flex items-center justify-between gap-3 text-[10px]"
+                  transition:fade
+                >
+                  <div class="flex items-center gap-1.5 text-neutral-600 dark:text-neutral-400">
+                    <div class="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
+                    <span class="font-medium capitalize truncate max-w-[100px]">{msg.presetId}</span>
+                  </div>
+                  <button 
+                    class="px-2 py-1 rounded bg-neutral-900/5 dark:bg-white/5 hover:bg-neutral-900/10 dark:hover:bg-white/10 hover:text-neutral-900 dark:hover:text-white transition-all text-neutral-500 font-medium flex items-center gap-1 cursor-pointer"
+                    onclick={() => restoreChatMessagePreset(msg)}
+                    title="Apply this exact design state"
+                  >
+                    <RotateCcw size={10} />
+                    <span>Restore Design</span>
+                  </button>
+                </div>
+              {/if}
+
+              <!-- Timestamp -->
+              <span class="text-[9px] text-neutral-400 dark:text-neutral-600 px-1 font-mono">
+                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+              </span>
+            </div>
+          {/each}
+        {/if}
+
+        <!-- Typing indicator -->
+        {#if aiLoading}
+          <div class="flex flex-col gap-1 items-start" transition:fade>
+            <div class="px-3.5 py-3 rounded-2xl rounded-tl-none bg-neutral-100 dark:bg-white/5 border border-neutral-200/50 dark:border-white/5 flex items-center gap-1">
+              <span class="w-1.5 h-1.5 rounded-full bg-neutral-500 animate-bounce" style="animation-delay: 0ms"></span>
+              <span class="w-1.5 h-1.5 rounded-full bg-neutral-500 animate-bounce" style="animation-delay: 150ms"></span>
+              <span class="w-1.5 h-1.5 rounded-full bg-neutral-500 animate-bounce" style="animation-delay: 300ms"></span>
+            </div>
+          </div>
+        {/if}
+      </div>
+    </div>
+  {/if}
 
   <!-- FLOATING MORPHING COMMAND CENTER -->
   <div 
@@ -1222,84 +1379,205 @@
       </div>
     {/if}
 
-    <!-- 2. Bottom Navigation / Input Pill Bar -->
-    <div class="px-4 py-3 flex items-center justify-between gap-3 h-14 select-none relative z-10 bg-white/20 dark:bg-black/25">
-      <!-- Left Side: User Avatar -->
-      <button 
-        class="relative w-8 h-8 rounded-full border border-white/10 overflow-hidden flex items-center justify-center bg-white/15 dark:bg-white/5 transition-all hover:scale-105 active:scale-90 cursor-pointer shadow-sm"
-        onclick={() => toggleMode('profile')}
-        title="Profile Avatar"
-      >
-        {#if githubAvatarUrl}
-          <img src={githubAvatarUrl} alt="Avatar" class="w-full h-full object-cover animate-scale-in" />
-        {:else}
-          <svg viewBox="0 0 24 24" width="15" height="15" stroke="currentColor" stroke-width="2" fill="none" class="text-neutral-800 dark:text-neutral-300"><path d="M20 21v-2a4 4 0 0 0-4-4H8a4 4 0 0 0-4 4v2"></path><circle cx="12" cy="7" r="4"></circle></svg>
-        {/if}
-      </button>
-
-      <!-- Middle: AI Prompt Bar -->
+    <!-- 2. Taller Unified Chat Input & Tool Bar -->
+    <div class="p-3.5 flex flex-col gap-3 relative z-10 bg-white/20 dark:bg-black/25">
+      
+      <!-- Top Row: Input Field -->
       <form 
         onsubmit={handleAiSubmit}
-        class="flex-1 flex items-center gap-2"
+        class="flex items-center gap-2.5"
       >
-        <div class="text-blue-500 flex items-center justify-center">
+        <div class="text-blue-500 flex items-center justify-center pl-1">
           {#if aiLoading}
             <svg class="animate-spin h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24">
               <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
               <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
             </svg>
           {:else}
-            <Sparkles size={15} />
+            <MessageSquare size={15} class="text-neutral-500 dark:text-neutral-400" />
           {/if}
         </div>
         
         <input 
+          name="chatPrompt"
           type="text"
           placeholder={aiLoading ? "Gemma 4 is designing..." : "Ask AI to customize or design..."}
           bind:value={aiPrompt}
           disabled={aiLoading}
           class="w-full bg-transparent text-sm text-neutral-900 dark:text-white placeholder-neutral-500 focus:outline-none focus:ring-0 select-text cursor-text disabled:opacity-50"
-          onclick={() => { if (islandMode === 'profile') islandMode = 'collapsed' }}
+          onclick={() => { 
+            if (islandMode === 'profile') islandMode = 'collapsed';
+            showChat = true; // Auto-open chat feed when starting to type
+          }}
+          autocomplete="off"
         />
       </form>
 
-      <!-- Right Side: Dock Controls -->
-      <div class="flex items-center gap-0.5 bg-black/5 dark:bg-white/5 p-0.5 rounded-full border border-white/5 shadow-inner">
-        <button 
-          class="p-2 rounded-full transition-all hover:scale-105 active:scale-90 cursor-pointer flex items-center justify-center {islandMode === 'presets' ? 'bg-blue-600 text-white shadow-md' : 'text-neutral-800 dark:text-neutral-300 hover:bg-neutral-950/5 dark:hover:bg-white/10'}"
-          onclick={() => toggleMode('presets')}
-          title="Presets Grid"
-        >
-          <Sparkles size={14} />
-        </button>
-        <button 
-          class="p-2 rounded-full transition-all hover:scale-105 active:scale-90 cursor-pointer flex items-center justify-center {islandMode === 'variables' ? 'bg-blue-600 text-white shadow-md' : 'text-neutral-800 dark:text-neutral-300 hover:bg-neutral-950/5 dark:hover:bg-white/10'}"
-          onclick={() => toggleMode('variables')}
-          title="Variables Editor"
-        >
-          <Sliders size={14} />
-        </button>
-        <button 
-          class="p-2 rounded-full transition-all hover:scale-105 active:scale-90 cursor-pointer flex items-center justify-center {islandMode === 'export' ? 'bg-blue-600 text-white shadow-md' : 'text-neutral-800 dark:text-neutral-300 hover:bg-neutral-950/5 dark:hover:bg-white/10'}"
-          onclick={() => toggleMode('export')}
-          title="Code Exporter"
-        >
-          <Code size={14} />
-        </button>
-        <button 
-          class="p-2 rounded-full transition-all hover:scale-105 active:scale-90 cursor-pointer flex items-center justify-center {islandMode === 'settings' ? 'bg-blue-600 text-white shadow-md' : 'text-neutral-800 dark:text-neutral-300 hover:bg-neutral-950/5 dark:hover:bg-white/10'}"
-          onclick={() => toggleMode('settings')}
-          title="AI Configuration"
-        >
-          <Settings size={14} />
-        </button>
-        <button 
-          class="p-2 rounded-full transition-all hover:scale-105 active:scale-90 cursor-pointer flex items-center justify-center {showChat ? 'bg-blue-600 text-white shadow-md' : 'text-neutral-800 dark:text-neutral-300 hover:bg-neutral-950/5 dark:hover:bg-white/10'}"
-          onclick={() => showChat = !showChat}
-          title="Toggle Chat Drawer"
-        >
-          <MessageSquare size={14} />
-        </button>
+      <!-- Bottom Row: Controls & Quick Actions -->
+      <div class="flex items-center justify-between gap-2 border-t border-neutral-250/20 dark:border-white/5 pt-2.5">
+        
+        <!-- Left: Action Group -->
+        <div class="flex items-center gap-1 bg-black/5 dark:bg-white/5 p-0.5 rounded-full border border-white/5 shadow-inner select-none">
+          <!-- New Chat -->
+          <button 
+            type="button"
+            class="p-2 rounded-full transition-all hover:scale-105 active:scale-90 cursor-pointer flex items-center justify-center text-neutral-800 dark:text-neutral-300 hover:bg-neutral-950/5 dark:hover:bg-white/10"
+            onclick={clearChatHistory}
+            title="Start New Chat"
+          >
+            <Plus size={14} />
+          </button>
+
+          <!-- Reference Canvas -->
+          <button 
+            type="button"
+            disabled={aiLoading}
+            class="p-2 rounded-full transition-all cursor-pointer flex items-center justify-center disabled:opacity-50
+              {hasReferenceInHistory 
+                ? 'bg-blue-600 text-white shadow-md' 
+                : 'text-neutral-800 dark:text-neutral-300 hover:bg-neutral-950/5 dark:hover:bg-white/10'}"
+            onclick={attachCurrentCanvasMessage}
+            title="Reference current canvas state"
+          >
+            <Layers size={14} />
+          </button>
+
+          <div class="w-px h-4 bg-neutral-300/30 dark:bg-white/10 mx-1"></div>
+
+          <!-- Presets Grid Toggle -->
+          <button 
+            type="button"
+            class="p-2 rounded-full transition-all hover:scale-105 active:scale-90 cursor-pointer flex items-center justify-center 
+              {islandMode === 'presets' ? 'bg-blue-600 text-white shadow-md' : 'text-neutral-800 dark:text-neutral-300 hover:bg-neutral-950/5 dark:hover:bg-white/10'}"
+            onclick={() => toggleMode('presets')}
+            title="Presets Grid"
+          >
+            <Sparkles size={14} />
+          </button>
+
+          <!-- Variables Editor Toggle -->
+          <button 
+            type="button"
+            class="p-2 rounded-full transition-all hover:scale-105 active:scale-90 cursor-pointer flex items-center justify-center 
+              {islandMode === 'variables' ? 'bg-blue-600 text-white shadow-md' : 'text-neutral-800 dark:text-neutral-300 hover:bg-neutral-950/5 dark:hover:bg-white/10'}"
+            onclick={() => toggleMode('variables')}
+            title="Variables Editor"
+          >
+            <Sliders size={14} />
+          </button>
+
+          <!-- Code Exporter Toggle -->
+          <button 
+            type="button"
+            class="p-2 rounded-full transition-all hover:scale-105 active:scale-90 cursor-pointer flex items-center justify-center 
+              {islandMode === 'export' ? 'bg-blue-600 text-white shadow-md' : 'text-neutral-800 dark:text-neutral-300 hover:bg-neutral-950/5 dark:hover:bg-white/10'}"
+            onclick={() => toggleMode('export')}
+            title="Code Exporter"
+          >
+            <Code size={14} />
+          </button>
+
+          <!-- AI Configuration Toggle -->
+          <button 
+            type="button"
+            class="p-2 rounded-full transition-all hover:scale-105 active:scale-90 cursor-pointer flex items-center justify-center 
+              {islandMode === 'settings' ? 'bg-blue-600 text-white shadow-md' : 'text-neutral-800 dark:text-neutral-300 hover:bg-neutral-950/5 dark:hover:bg-white/10'}"
+            onclick={() => toggleMode('settings')}
+            title="AI Configuration"
+          >
+            <Settings size={14} />
+          </button>
+
+          <!-- Profile Toggle -->
+          <button 
+            type="button"
+            class="p-2 rounded-full transition-all hover:scale-105 active:scale-90 cursor-pointer flex items-center justify-center 
+              {islandMode === 'profile' ? 'bg-blue-600 text-white shadow-md' : 'text-neutral-800 dark:text-neutral-300 hover:bg-neutral-950/5 dark:hover:bg-white/10'}"
+            onclick={() => toggleMode('profile')}
+            title="Profile Settings"
+          >
+            {#if githubAvatarUrl}
+              <img src={githubAvatarUrl} alt="Avatar" class="w-3.5 h-3.5 rounded-full object-cover" />
+            {:else}
+              <User size={14} />
+            {/if}
+          </button>
+
+          <div class="w-px h-4 bg-neutral-300/30 dark:bg-white/10 mx-1"></div>
+
+          <!-- Toggle Chat -->
+          <button 
+            type="button"
+            class="p-2 rounded-full transition-all hover:scale-105 active:scale-90 cursor-pointer flex items-center justify-center 
+              {showChat ? 'bg-blue-600 text-white shadow-md' : 'text-neutral-800 dark:text-neutral-300 hover:bg-neutral-950/5 dark:hover:bg-white/10'}"
+            onclick={() => {
+              showChat = !showChat;
+              if (showChat) {
+                islandMode = 'collapsed';
+                setTimeout(() => {
+                  const input = document.getElementsByName('chatPrompt')[0] as HTMLInputElement;
+                  if (input) input.focus();
+                }, 50);
+              }
+            }}
+            title="Toggle Floating Chat Feed"
+          >
+            <MessageSquare size={14} />
+          </button>
+        </div>
+
+        <!-- Right: Model Selector & Send Button -->
+        <div class="flex items-center gap-2 select-none">
+          <!-- Quick Model Dropdown -->
+          <div class="relative flex items-center">
+            {#if aiProvider === 'gemini'}
+              <select 
+                bind:value={geminiModel}
+                class="appearance-none bg-black/5 dark:bg-white/5 border border-neutral-300/20 dark:border-white/5 rounded-xl pl-2.5 pr-6 py-1.5 text-[10px] font-mono text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white focus:outline-none transition-all cursor-pointer shadow-sm"
+              >
+                <option value="gemini-3.5-flash">Gemini 3.5 Flash</option>
+                <option value="gemini-3.5-pro">Gemini 3.5 Pro</option>
+                <option value="gemini-3.1-flash-lite">Gemini 3.1 Lite</option>
+                <option value="gemini-3.0-flash">Gemini 3.0 Flash</option>
+                <option value="gemma-4-26b">Gemma 4 26B</option>
+                <option value="gemma-4-12b">Gemma 4 12B</option>
+              </select>
+            {:else if aiProvider === 'workers-ai'}
+              <select 
+                bind:value={cfModel}
+                class="appearance-none bg-black/5 dark:bg-white/5 border border-neutral-300/20 dark:border-white/5 rounded-xl pl-2.5 pr-6 py-1.5 text-[10px] font-mono text-neutral-600 dark:text-neutral-300 hover:text-neutral-900 dark:hover:text-white focus:outline-none transition-all cursor-pointer shadow-sm"
+              >
+                <option value="@cf/google/gemma-4-26b-a4b-it">Gemma 4 26B</option>
+                <option value="@cf/deepseek-ai/deepseek-r1-distill-qwen-32b">DeepSeek R1</option>
+                <option value="@cf/meta/llama-3.3-70b-instruct-fp8-fast">Llama 3.3</option>
+                <option value="@cf/meta/llama-3.1-8b-instruct-fp8">Llama 3.1</option>
+              </select>
+            {:else}
+              <span class="text-[10px] font-mono text-neutral-500 capitalize px-2">{aiProvider}</span>
+            {/if}
+            <!-- Caret Down Icon -->
+            <div class="absolute inset-y-0 right-2 flex items-center pointer-events-none text-neutral-500">
+              <svg class="w-2.5 h-2.5" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path stroke-linecap="round" stroke-linejoin="round" stroke-width="2.5" d="M19 9l-7 7-7-7"></path></svg>
+            </div>
+          </div>
+
+          <!-- Submit Button -->
+          <button 
+            type="button" 
+            disabled={aiLoading || !aiPrompt.trim()}
+            onclick={() => {
+              if (aiPrompt.trim()) {
+                sendChatMessage(aiPrompt)
+                aiPrompt = ''
+              }
+            }}
+            class="p-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition-all disabled:opacity-50 flex items-center justify-center cursor-pointer shadow-md"
+            title="Send design request"
+          >
+            <Send size={13} />
+          </button>
+        </div>
+
       </div>
     </div>
   </div>
@@ -1346,199 +1624,7 @@
     </div>
   {/if}
 
-  <!-- AI Chat Drawer -->
-  {#if showChat}
-    <div 
-      class="absolute inset-y-0 left-0 z-40 w-[380px] max-w-full bg-white/70 dark:bg-black/55 backdrop-blur-3xl border-r border-neutral-200/50 dark:border-white/10 flex flex-col shadow-2xl overflow-hidden transition-all duration-300 animate-scale-in"
-      transition:fly={{ x: -380, duration: 300 }}
-    >
-      <!-- Chat Header -->
-      <div class="px-4 py-3 border-b border-neutral-200/50 dark:border-white/10 flex items-center justify-between bg-neutral-50/50 dark:bg-neutral-900/50">
-        <div class="flex items-center gap-2">
-          <div class="p-1 rounded-lg bg-blue-600 text-white flex items-center justify-center">
-            <MessageSquare size={13} />
-          </div>
-          <span class="font-semibold text-xs text-neutral-900 dark:text-white uppercase tracking-wider font-mono">
-            AI Design Partner
-          </span>
-        </div>
-        <div class="flex items-center gap-1">
-          <button 
-            class="px-2.5 py-1 rounded-lg text-neutral-600 dark:text-neutral-300 hover:bg-neutral-900/5 dark:hover:bg-white/5 transition-all cursor-pointer flex items-center gap-1 text-[10px] font-semibold font-mono border border-neutral-200/40 dark:border-white/5 shadow-sm bg-neutral-900/5 dark:bg-white/5"
-            onclick={clearChatHistory}
-            title="Start New Chat"
-          >
-            <Plus size={10} />
-            <span>New Chat</span>
-          </button>
-          
-          {#if chatMessages.length > 0}
-            <button 
-              class="p-1.5 rounded-lg text-neutral-500 hover:text-red-500 hover:bg-neutral-900/5 dark:hover:bg-white/5 transition-all cursor-pointer flex items-center justify-center"
-              onclick={clearChatHistory}
-              title="Clear Chat History"
-            >
-              <Trash2 size={13} />
-            </button>
-          {/if}
-          <button 
-            class="p-1.5 rounded-lg text-neutral-500 hover:text-neutral-800 dark:hover:text-white hover:bg-neutral-900/5 dark:hover:bg-white/5 transition-all cursor-pointer flex items-center justify-center"
-            onclick={() => showChat = false}
-            title="Hide Chat"
-          >
-            <X size={13} />
-          </button>
-        </div>
-      </div>
 
-      <!-- Chat Messages Feed -->
-      <div 
-        bind:this={chatFeedContainer}
-        class="flex-1 overflow-y-auto p-4 space-y-3.5 select-text"
-      >
-        {#if chatMessages.length === 0}
-          <div class="h-full flex flex-col items-center justify-center text-center p-6 text-neutral-500">
-            <div class="p-3.5 rounded-full bg-neutral-100 dark:bg-neutral-900 mb-3 text-neutral-400">
-              <MessageSquare size={24} />
-            </div>
-            <p class="text-xs font-semibold text-neutral-800 dark:text-neutral-300">AI Design Partner</p>
-            <p class="text-[10px] max-w-[200px] mt-1 leading-normal mb-5">
-              Describe your dream aesthetic, or customize your existing canvas with AI!
-            </p>
-            
-            <div class="flex flex-col gap-2 w-full max-w-[250px]">
-              <button 
-                class="px-3.5 py-2 text-[10px] font-semibold text-left rounded-xl border border-neutral-200 dark:border-white/10 hover:bg-neutral-900/5 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-all cursor-pointer flex items-center gap-2 bg-white/40 dark:bg-black/10 shadow-sm"
-                onclick={() => {
-                  const input = document.getElementsByName('chatPrompt')[0] as HTMLInputElement;
-                  if (input) input.focus();
-                }}
-              >
-                <span>✨</span>
-                <span>Create new design from scratch</span>
-              </button>
-              <button 
-                class="px-3.5 py-2 text-[10px] font-semibold text-left rounded-xl border border-neutral-200 dark:border-white/10 hover:bg-neutral-900/5 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-all cursor-pointer flex items-center gap-2 bg-white/40 dark:bg-black/10 shadow-sm"
-                onclick={attachCurrentCanvasMessage}
-              >
-                <span>✏️</span>
-                <span>Modify current background</span>
-              </button>
-            </div>
-          </div>
-        {:else}
-          {#each chatMessages as msg (msg.id)}
-            <div class="flex flex-col gap-1 {msg.role === 'user' ? 'items-end' : 'items-start'}">
-              <!-- Bubble -->
-              {#if msg.role === 'user' && msg.config}
-                <div 
-                  class="max-w-[85%] px-3.5 py-2 rounded-2xl text-xs leading-normal relative transition-all duration-300 bg-blue-500/10 dark:bg-blue-500/20 border border-blue-500/20 text-blue-600 dark:text-blue-400 rounded-tr-none flex items-center gap-2 shadow-sm font-sans"
-                >
-                  <Layers size={11} />
-                  <span>Referencing active <strong class="capitalize font-mono font-bold">{msg.presetId}</strong> design</span>
-                </div>
-              {:else}
-                <div 
-                  class="max-w-[85%] px-3.5 py-2.5 rounded-2xl text-xs leading-normal relative transition-all duration-300
-                    {msg.role === 'user' 
-                      ? 'bg-blue-600 text-white rounded-tr-none shadow-sm' 
-                      : msg.isError 
-                        ? 'bg-red-500/10 dark:bg-red-500/15 border border-red-500/20 text-red-650 dark:text-red-400 rounded-tl-none'
-                        : 'bg-neutral-100 dark:bg-white/5 border border-neutral-200/50 dark:border-white/5 text-neutral-800 dark:text-neutral-200 rounded-tl-none'}"
-                >
-                  {#if msg.isError}
-                    <div class="flex items-start gap-1.5">
-                      <span class="mt-0.5">⚠️</span>
-                      <span>{msg.content}</span>
-                    </div>
-                  {:else}
-                    {msg.content}
-                  {/if}
-                </div>
-              {/if}
-
-              <!-- Restore Action Card (if assistant message has preset configs) -->
-              {#if msg.role === 'assistant' && msg.presetId && msg.config}
-                <div 
-                  class="w-full max-w-[85%] mt-1.5 p-2 rounded-xl bg-neutral-50 dark:bg-white/5 border border-neutral-200/30 dark:border-white/5 flex items-center justify-between gap-3 text-[10px]"
-                  transition:fade
-                >
-                  <div class="flex items-center gap-1.5 text-neutral-600 dark:text-neutral-400">
-                    <div class="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
-                    <span class="font-medium capitalize truncate max-w-[100px]">{msg.presetId}</span>
-                  </div>
-                  <button 
-                    class="px-2 py-1 rounded bg-neutral-900/5 dark:bg-white/5 hover:bg-neutral-900/10 dark:hover:bg-white/10 hover:text-neutral-900 dark:hover:text-white transition-all text-neutral-500 font-medium flex items-center gap-1 cursor-pointer"
-                    onclick={() => restoreChatMessagePreset(msg)}
-                    title="Apply this exact design state"
-                  >
-                    <RotateCcw size={10} />
-                    <span>Restore Design</span>
-                  </button>
-                </div>
-              {/if}
-
-              <!-- Timestamp -->
-              <span class="text-[9px] text-neutral-400 dark:text-neutral-600 px-1 font-mono">
-                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            </div>
-          {/each}
-        {/if}
-
-        <!-- Typing indicator -->
-        {#if aiLoading}
-          <div class="flex flex-col gap-1 items-start" transition:fade>
-            <div class="px-3.5 py-3 rounded-2xl rounded-tl-none bg-neutral-100 dark:bg-white/5 border border-neutral-200/50 dark:border-white/5 flex items-center gap-1">
-              <span class="w-1.5 h-1.5 rounded-full bg-neutral-500 animate-bounce" style="animation-delay: 0ms"></span>
-              <span class="w-1.5 h-1.5 rounded-full bg-neutral-500 animate-bounce" style="animation-delay: 150ms"></span>
-              <span class="w-1.5 h-1.5 rounded-full bg-neutral-500 animate-bounce" style="animation-delay: 300ms"></span>
-            </div>
-          </div>
-        {/if}
-      </div>
-
-      <!-- Chat Footer Input Area -->
-      <div class="p-3 border-t border-neutral-200/50 dark:border-white/10 bg-neutral-50/50 dark:bg-neutral-900/50">
-        <form 
-          onsubmit={(e) => {
-            e.preventDefault()
-            const input = e.currentTarget.elements.namedItem('chatPrompt') as HTMLInputElement
-            if (input && input.value.trim()) {
-              sendChatMessage(input.value)
-              input.value = ''
-            }
-          }}
-          class="flex gap-2"
-        >
-          <button 
-            type="button"
-            disabled={aiLoading}
-            class="p-2 rounded-xl border border-neutral-200 dark:border-white/10 text-neutral-500 hover:text-neutral-800 dark:hover:text-white hover:bg-neutral-900/5 dark:hover:bg-white/5 transition-all cursor-pointer flex items-center justify-center disabled:opacity-50"
-            onclick={attachCurrentCanvasMessage}
-            title="Reference current canvas state"
-          >
-            <Layers size={12} />
-          </button>
-          <input 
-            name="chatPrompt"
-            type="text" 
-            placeholder="Type design request..."
-            disabled={aiLoading}
-            class="flex-1 px-3 py-2 text-xs bg-white dark:bg-neutral-950 border border-neutral-200 dark:border-white/10 rounded-xl text-neutral-900 dark:text-neutral-100 placeholder-neutral-400 select-text cursor-text focus:outline-none focus:ring-1 focus:ring-blue-500 disabled:opacity-50"
-            autocomplete="off"
-          />
-          <button 
-            type="submit" 
-            disabled={aiLoading}
-            class="p-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition-all disabled:opacity-50 disabled:bg-blue-600 flex items-center justify-center cursor-pointer shadow"
-          >
-            <Send size={12} />
-          </button>
-        </form>
-      </div>
-    </div>
-  {/if}
 
 </div>
 

@@ -127,7 +127,7 @@
     (typeof localStorage !== 'undefined' && localStorage.getItem('ai-cf-model') as any) || '@cf/google/gemma-4-26b-a4b-it'
   )
   let geminiModel = $state(
-    (typeof localStorage !== 'undefined' && localStorage.getItem('ai-gemini-model')) || 'gemini-2.0-flash'
+    (typeof localStorage !== 'undefined' && localStorage.getItem('ai-gemini-model')) || 'gemini-3.5-flash'
   )
   let chatMessages = $state<ChatMessage[]>(
     (typeof localStorage !== 'undefined' && JSON.parse(localStorage.getItem('studio-chat-messages') || '[]')) || []
@@ -1054,12 +1054,15 @@
                       bind:value={geminiModel}
                       class="px-2.5 py-1.5 bg-neutral-900/5 dark:bg-white/5 border border-white/10 rounded-lg text-neutral-900 dark:text-neutral-100 cursor-pointer"
                     >
-                      <option value="gemini-2.5-flash">Gemini 2.5 Flash (Default - Fast & Smart)</option>
-                      <option value="gemini-2.5-pro">Gemini 2.5 Pro (Reasoning & Complex)</option>
-                      <option value="gemini-2.0-flash">Gemini 2.0 Flash</option>
-                      <option value="gemini-2.0-flash-lite">Gemini 2.0 Flash Lite</option>
-                      <option value="gemini-1.5-flash">Gemini 1.5 Flash (Legacy)</option>
-                      <option value="gemma-2-27b-it">Gemma 2 27B</option>
+                      <option value="gemini-3.5-flash">Gemini 3.5 Flash (Default - Ultra Fast & Intelligent)</option>
+                      <option value="gemini-3.5-pro">Gemini 3.5 Pro (Frontier Intelligence)</option>
+                      <option value="gemini-3.1-flash-lite">Gemini 3.1 Flash-Lite (Low Latency)</option>
+                      <option value="gemini-3.0-flash">Gemini 3.0 Flash</option>
+                      <option value="gemini-3.0-pro">Gemini 3.0 Pro</option>
+                      <option value="gemma-4-26b">Gemma 4 26B (MoE Reasoning)</option>
+                      <option value="gemma-4-12b">Gemma 4 12B (On-device Multimodal)</option>
+                      <option value="gemma-4-31b">Gemma 4 31B (Dense Enterprise)</option>
+                      <option value="gemini-2.5-flash">Gemini 2.5 Flash (Legacy)</option>
                     </select>
                   </div>
 

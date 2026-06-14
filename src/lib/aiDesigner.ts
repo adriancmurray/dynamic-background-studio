@@ -164,15 +164,19 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
       throw new Error('API Key is required for Google AI Studio (Gemini).')
     }
 
-    // Standard available Gemini API models with user preference prioritized
-    const selectedModel = aiConfig.geminiModel || 'gemini-2.0-flash'
+    // Standard available Gemini API models with user preference prioritized (2026 versions)
+    const selectedModel = aiConfig.geminiModel || 'gemini-3.5-flash'
     const models = Array.from(new Set([
       selectedModel,
-      'gemini-2.5-flash',
-      'gemini-2.0-flash',
-      'gemini-2.0-flash-lite',
-      'gemini-1.5-flash',
-      'gemma-2-27b-it'
+      'gemini-3.5-flash',
+      'gemini-3.5-pro',
+      'gemini-3.1-flash-lite',
+      'gemini-3.0-flash',
+      'gemini-3.0-pro',
+      'gemma-4-26b',
+      'gemma-4-12b',
+      'gemma-4-31b',
+      'gemini-2.5-flash'
     ]))
     let lastError = ''
 

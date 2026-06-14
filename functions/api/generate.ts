@@ -148,8 +148,8 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
 `
     }
 
-    // Call Gemma-2-9b or Llama-3-8b in Workers AI
-    const model = '@cf/meta/llama-3-8b-instruct' // Reliable instruction-following model on Workers AI
+    // Call Llama 3.1 8B in Workers AI
+    const model = '@cf/meta/llama-3.1-8b-instruct-fast' // Reliable instruction-following model on Workers AI
     const response = await env.AI.run(model, {
       messages: [
         { role: 'system', content: SYSTEM_INSTRUCTION + galleryContext },
@@ -158,19 +158,26 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
       response_format: { type: 'json_object' }
     })
 
-    const resultText = response.response
-    if (!resultText) {
-      return new Response('Empty response from AI model', { status: 500 })
+    const result = response.response
+    let parsed: any
+
+    if (typeof result === 'object' && result !== null) {
+      parsed = result
+    } else if (typeof result === 'string') {
+      let jsonText = result.trim()
+      const mdMatch = jsonText.match(/```json\s*([\s\S]*?)\s*```/)
+      if (mdMatch) {
+        jsonText = mdMatch[1]
+      }
+      parsed = JSON.parse(jsonText)
+    } else {
+      throw new Error('Unsupported response format from AI model: ' + typeof result)
     }
 
-    // Attempt to extract JSON from markdown if necessary, or parse directly
-    let jsonText = resultText.trim()
-    const mdMatch = jsonText.match(/```json\s*([\s\S]*?)\s*```/)
-    if (mdMatch) {
-      jsonText = mdMatch[1]
+    if (!parsed || !parsed.presetId || !parsed.config) {
+      throw new Error('Response JSON is missing presetId or config')
     }
 
-    const parsed = JSON.parse(jsonText)
     return new Response(JSON.stringify(parsed), {
       headers: { 'Content-Type': 'application/json' }
     })

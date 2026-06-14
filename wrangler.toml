@@ -1,0 +1,5 @@
+name = "canvas"
+pages_build_output_dir = "dist"
+
+[ai]
+binding = "AI"

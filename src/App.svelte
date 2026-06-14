@@ -26,6 +26,7 @@
     Trash2,
     Plus,
     User,
+    HelpCircle,
   } from '@lucide/svelte'
 
   // Import dynamic backgrounds
@@ -62,7 +63,7 @@
   let activeConfig = $derived(configs[activePresetId])
   let activePreset = $derived(presetCatalog.find(p => p.id === activePresetId)!)
 
-  let showOverlay = $state(true)
+  let showOverlay = $state(false)
   let theme = $state<'dark' | 'light'>('dark')
   
   // Command Center Morph State
@@ -140,7 +141,9 @@
   )
 
   let githubUsername = $state(
-    (typeof localStorage !== 'undefined' && localStorage.getItem('studio-github-username')) || ''
+    (typeof localStorage !== 'undefined' && localStorage.getItem('studio-github-username')) || 
+    (typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GIT_USERNAME) || 
+    ''
   )
   let githubAvatarUrl = $derived(
     githubUsername ? `https://github.com/${githubUsername}.png` : ''
@@ -238,6 +241,23 @@
   }
 
   onMount(() => {
+    // Parse URL Hash authentication redirect from GitHub OAuth
+    const hash = window.location.hash
+    if (hash.startsWith('#auth=github')) {
+      const params = new URLSearchParams(hash.replace('#', ''))
+      const username = params.get('username')
+      if (username) {
+        githubUsername = username
+        localStorage.setItem('studio-github-username', username)
+        
+        // Clean hash from URL without reloading
+        window.history.replaceState(null, '', window.location.pathname + window.location.search)
+        
+        // Switch to profile settings view
+        islandMode = 'profile'
+      }
+    }
+
     // Detect initial theme
     const savedTheme = localStorage.getItem('studio-theme')
     if (savedTheme === 'light' || savedTheme === 'dark') {
@@ -276,11 +296,44 @@
   $effect(() => { localStorage.setItem('ai-ollama-url', ollamaUrl) })
   $effect(() => { localStorage.setItem('ai-cf-model', cfModel) })
   $effect(() => { localStorage.setItem('studio-gallery-repo', galleryRepo) })
-  $effect(() => { localStorage.setItem('studio-github-username', githubUsername) })
+  let repoDebounceTimeout: any
+  $effect(() => {
+    localStorage.setItem('studio-github-username', githubUsername)
+    if (githubUsername.trim()) {
+      clearTimeout(repoDebounceTimeout)
+      repoDebounceTimeout = setTimeout(() => {
+        fetchUserRepos()
+      }, 500)
+    } else {
+      userRepos = []
+    }
+  })
   $effect(() => { localStorage.setItem('studio-local-presets', JSON.stringify(localPresets)) })
   $effect(() => { localStorage.setItem('ai-gemini-model', geminiModel) })
   $effect(() => { localStorage.setItem('studio-chat-messages', JSON.stringify(chatMessages)) })
   $effect(() => { localStorage.setItem('studio-show-chat', showChat.toString()) })
+
+  // Initialize welcome message if chat history is empty
+  $effect(() => {
+    if (chatMessages.length === 0) {
+      chatMessages = [
+        {
+          id: 'welcome-message',
+          role: 'assistant',
+          content: `Hello! I'm your AI Design Partner. 
+
+Welcome to Background Studio! Here's how you can use this interactive space:
+- 🌌 Aesthetic Prompts: Describe what you want to see (e.g. "make a cyber-themed ripple effect with neon greens" or "a slow, calming sunset flowfield").
+- 🎛️ Manual Controls: Click the morphing island at the bottom to adjust presets, fine-tune variables directly, or copy the Svelte/CSS code.
+- 📐 Reference Canvas: Attach your active canvas config to direct modifications to your current design.
+- 📘 Guide Sheet: Tap the Help (?) icon anytime to view keyboard shortcuts and detailed instructions.
+
+How can I help you design today?`,
+          timestamp: Date.now()
+        }
+      ]
+    }
+  })
 
   function toggleTheme() {
     theme = theme === 'dark' ? 'light' : 'dark'
@@ -538,40 +591,74 @@
         <Voronoi {...activeConfig} />
       {/if}
 
-      <!-- Interactive Playground Overlay -->
+      <!-- Interactive Instructions Sheet Overlay -->
       {#if showOverlay}
         <div 
-          class="relative z-10 max-w-md p-8 rounded-2xl border border-white/10 dark:border-white/5 bg-white/20 dark:bg-black/35 backdrop-blur-md shadow-lg text-center mx-4 transition-all duration-500 ease-out pointer-events-auto
-            {islandMode !== 'collapsed' ? '-translate-y-24 md:-translate-y-36' : 'translate-y-0'}"
+          class="relative z-10 max-w-lg w-full p-6 md:p-8 rounded-2xl border border-neutral-200/20 dark:border-white/10 bg-white/75 dark:bg-neutral-900/80 backdrop-blur-xl shadow-2xl text-left mx-4 transition-all duration-300 pointer-events-auto max-h-[85vh] overflow-y-auto"
+          transition:scale={{ duration: 200, start: 0.95 }}
         >
           <button 
-            class="absolute top-3 right-3 p-1.5 rounded-full hover:bg-black/5 dark:hover:bg-white/10 text-neutral-800 dark:text-neutral-300 transition-colors cursor-pointer"
+            class="absolute top-4 right-4 p-2 rounded-full hover:bg-neutral-900/10 dark:hover:bg-white/10 text-neutral-800 dark:text-neutral-300 transition-colors cursor-pointer flex items-center justify-center"
             onclick={() => showOverlay = false}
+            aria-label="Close instructions"
           >
-            <X size={14} />
+            <X size={16} />
           </button>
-          <div class="inline-flex p-3 rounded-full bg-blue-500/10 text-blue-500 mb-4 animate-pulse">
-            <Sparkles size={24} />
+          
+          <div class="flex items-center gap-3 mb-6 select-none">
+            <div class="p-2.5 rounded-xl bg-blue-500/10 text-blue-500 dark:text-blue-400">
+              <HelpCircle size={24} />
+            </div>
+            <div>
+              <h2 class="text-2xl font-bold tracking-tight text-neutral-900 dark:text-white">Studio Guide</h2>
+              <p class="text-xs text-neutral-600 dark:text-neutral-400">Master the interactive generative backgrounds</p>
+            </div>
           </div>
-          <h1 class="text-3xl font-semibold tracking-tight text-neutral-900 dark:text-white mb-2">
-            Dynamic Space
-          </h1>
-          <p class="text-sm text-neutral-800 dark:text-neutral-300 leading-relaxed mb-6">
-            A beautiful Svelte background playground. Customize your canvas variables, prompt the built-in Gemma 4 agent, or copy the standalone code directly into your project.
-          </p>
-          <div class="flex gap-3 justify-center">
-            <button 
-              class="px-5 py-2.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-sm transition-all shadow-md active:scale-95 cursor-pointer"
-              onclick={() => showOverlay = false}
-            >
-              Get Started
-            </button>
-            <button 
-              class="px-5 py-2.5 rounded-lg bg-neutral-900/10 hover:bg-neutral-900/20 dark:bg-white/10 dark:hover:bg-white/20 text-neutral-950 dark:text-white font-medium text-sm transition-all active:scale-95 cursor-pointer"
-              onclick={() => toggleMode('export')}
-            >
-              Copy Svelte Code
-            </button>
+
+          <div class="space-y-6 text-sm text-neutral-800 dark:text-neutral-300 leading-relaxed">
+            <div>
+              <h3 class="font-semibold text-neutral-950 dark:text-white mb-1.5 flex items-center gap-1.5 select-none">
+                <Sparkles size={16} class="text-yellow-500" />
+                AI Design Partner
+              </h3>
+              <p class="text-xs text-neutral-600 dark:text-neutral-400">
+                Interact with the built-in local or remote models (e.g. Gemma 4, Gemini) to craft custom shaders. Describe your design prompts in the chat box, attach your active design to steer modifications, or use preset options.
+              </p>
+            </div>
+
+            <div>
+              <h3 class="font-semibold text-neutral-950 dark:text-white mb-1.5 flex items-center gap-1.5 select-none">
+                <Sliders size={16} class="text-blue-500" />
+                Manual Controls & Variables
+              </h3>
+              <p class="text-xs text-neutral-600 dark:text-neutral-400 mb-2">
+                Click the morphing island at the bottom to expand options:
+              </p>
+              <ul class="list-disc pl-5 space-y-1 text-xs text-neutral-600 dark:text-neutral-400">
+                <li><strong>Presets:</strong> Choose between Dotfield, Constellation, Flowfield, Voronoi, Nebula, Synthwave, and more.</li>
+                <li><strong>Variables:</strong> Adjust particle counts, speeds, trail fades, sizes, opacities, and hex color codes.</li>
+                <li><strong>Viewport:</strong> Toggle between Desktop full-screen preview and Mobile device simulator (top-right).</li>
+              </ul>
+            </div>
+
+            <div>
+              <h3 class="font-semibold text-neutral-950 dark:text-white mb-1.5 flex items-center gap-1.5 select-none">
+                <Code size={16} class="text-emerald-500" />
+                Developer Integration & Export
+              </h3>
+              <p class="text-xs text-neutral-600 dark:text-neutral-400">
+                Once satisfied with your design, use the <strong>Export Svelte Code</strong> feature in the bottom island to copy a fully-functioning, responsive standalone background component ready for your project.
+              </p>
+            </div>
+
+            <div class="pt-4 border-t border-neutral-200/50 dark:border-white/10 flex justify-end">
+              <button 
+                class="px-5 py-2.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white font-semibold text-xs transition-all shadow-md hover:shadow-blue-500/20 active:scale-95 cursor-pointer"
+                onclick={() => showOverlay = false}
+              >
+                Start Designing
+              </button>
+            </div>
           </div>
         </div>
       {/if}
@@ -582,17 +669,13 @@
 
   <!-- TOP RIGHT ACTION BAR -->
   <div class="fixed top-4 right-4 z-20 flex gap-2 pointer-events-auto">
-    <!-- Overlay Toggle -->
+    <!-- Help Guide Toggle -->
     <button 
       class="p-2.5 rounded-full bg-white/20 dark:bg-black/35 backdrop-blur-md border border-white/10 dark:border-white/5 text-neutral-800 dark:text-neutral-200 hover:bg-white/30 dark:hover:bg-black/50 transition-all cursor-pointer flex items-center justify-center shadow-lg"
       onclick={() => showOverlay = !showOverlay}
-      title={showOverlay ? "Hide Content Overlay" : "Show Content Overlay"}
+      title={showOverlay ? "Hide Guide" : "Show Guide & Instructions"}
     >
-      {#if showOverlay}
-        <EyeOff size={14} />
-      {:else}
-        <Eye size={14} />
-      {/if}
+      <HelpCircle size={14} />
     </button>
 
     <!-- Viewport Mode -->
@@ -661,7 +744,7 @@
             <MessageSquare size={20} />
           </div>
           <p class="text-xs font-bold text-neutral-800 dark:text-neutral-200 tracking-wide">AI Design Partner</p>
-          <p class="text-[10.5px] text-neutral-600 dark:text-neutral-455 max-w-[220px] mt-1.5 leading-normal mb-4">
+          <p class="text-[10.5px] text-neutral-600 dark:text-neutral-400 max-w-[220px] mt-1.5 leading-normal mb-4">
             Describe your dream aesthetic, or customize your existing canvas with AI!
           </p>
           
@@ -701,12 +784,12 @@
               </div>
             {:else}
               <div 
-                class="max-w-[85%] px-4 py-2.5 rounded-2xl text-xs leading-normal relative transition-all duration-300 pointer-events-auto select-text
+                class="max-w-[85%] px-4 py-2.5 rounded-2xl text-xs leading-normal relative transition-all duration-300 pointer-events-auto select-text whitespace-pre-wrap
                   {msg.role === 'user' 
                     ? 'bg-gradient-to-br from-blue-600 to-blue-700 dark:from-blue-500/90 dark:to-blue-650/90 text-white rounded-tr-none shadow-md shadow-blue-500/5 border border-blue-500/15' 
                     : msg.isError 
-                      ? 'bg-red-500/10 dark:bg-red-500/15 backdrop-blur-md border border-red-500/30 dark:border-red-500/25 text-red-750 dark:text-red-400 rounded-tl-none shadow-sm shadow-red-500/5'
-                      : 'bg-white/80 dark:bg-neutral-900/40 backdrop-blur-xl border border-neutral-250/50 dark:border-white/10 text-neutral-950 dark:text-neutral-250 rounded-tl-none shadow-md shadow-black/5 hover:bg-white/85 dark:hover:bg-neutral-900/45'}"
+                      ? 'bg-red-500/10 dark:bg-red-500/15 backdrop-blur-md border border-red-500/30 dark:border-red-500/25 text-red-600 dark:text-red-400 rounded-tl-none shadow-sm shadow-red-500/5'
+                      : 'bg-white/85 dark:bg-neutral-900/60 backdrop-blur-xl border border-neutral-200/50 dark:border-white/10 text-neutral-900 dark:text-neutral-100 rounded-tl-none shadow-md shadow-black/5 hover:bg-white/90 dark:hover:bg-neutral-900/65'}"
               >
                 {#if msg.isError}
                   <div class="flex items-start gap-1.5">
@@ -722,10 +805,10 @@
             <!-- Restore Action Card (if assistant message has preset configs) -->
             {#if msg.role === 'assistant' && msg.presetId && msg.config}
               <div 
-                class="w-full max-w-[85%] mt-1.5 p-2.5 rounded-xl bg-white/70 dark:bg-neutral-900/35 backdrop-blur-md border border-neutral-250/45 dark:border-white/5 flex items-center justify-between gap-3 text-[10px] pointer-events-auto shadow-md"
+                class="w-full max-w-[85%] mt-1.5 p-2.5 rounded-xl bg-white/75 dark:bg-neutral-900/50 backdrop-blur-md border border-neutral-200/40 dark:border-white/5 flex items-center justify-between gap-3 text-[10px] pointer-events-auto shadow-md"
                 transition:fade
               >
-                <div class="flex items-center gap-1.5 text-neutral-600 dark:text-neutral-450">
+                <div class="flex items-center gap-1.5 text-neutral-600 dark:text-neutral-300">
                   <div class="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50 animate-pulse"></div>
                   <span class="font-bold capitalize truncate max-w-[100px]">{msg.presetId}</span>
                 </div>
@@ -741,7 +824,7 @@
             {/if}
 
             <!-- Timestamp -->
-            <span class="text-[9px] text-neutral-450 dark:text-neutral-550 px-2 font-mono select-none">
+            <span class="text-[9px] text-neutral-500 dark:text-neutral-400 px-2 font-mono select-none">
               {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
             </span>
           </div>
@@ -751,7 +834,7 @@
       <!-- Typing indicator -->
       {#if aiLoading}
         <div class="flex flex-col gap-1 items-start pointer-events-none" transition:fade>
-          <div class="px-4 py-3 rounded-2xl rounded-tl-none bg-white/80 dark:bg-neutral-900/40 backdrop-blur-xl border border-neutral-250/50 dark:border-white/10 flex items-center gap-1 shadow-md pointer-events-auto">
+          <div class="px-4 py-3 rounded-2xl rounded-tl-none bg-white/85 dark:bg-neutral-900/60 backdrop-blur-xl border border-neutral-200/50 dark:border-white/10 flex items-center gap-1 shadow-md pointer-events-auto">
             <span class="w-1.5 h-1.5 rounded-full bg-neutral-500 animate-bounce" style="animation-delay: 0ms"></span>
             <span class="w-1.5 h-1.5 rounded-full bg-neutral-500 animate-bounce" style="animation-delay: 150ms"></span>
             <span class="w-1.5 h-1.5 rounded-full bg-neutral-500 animate-bounce" style="animation-delay: 300ms"></span>
@@ -1311,7 +1394,22 @@
                 {/if}
               </div>
               <div class="flex-1 space-y-2">
-                <div class="flex flex-col gap-1 text-xs">
+                <div class="flex flex-col gap-1.5 text-xs">
+                  {#if !githubUsername}
+                    <a 
+                      href="/api/auth/github"
+                      class="w-full py-2 px-4 rounded-xl bg-neutral-900 hover:bg-neutral-800 dark:bg-white dark:hover:bg-neutral-100 text-white dark:text-neutral-950 font-bold transition-all active:scale-95 shadow-md flex items-center justify-center gap-2 cursor-pointer"
+                    >
+                      <svg viewBox="0 0 24 24" width="16" height="16" fill="currentColor"><path d="M12 2A10 10 0 0 0 2 12c0 4.42 2.87 8.17 6.84 9.5.5.08.66-.23.66-.5v-1.69c-2.77.6-3.36-1.34-3.36-1.34-.46-1.16-1.11-1.47-1.11-1.47-.9-.62.07-.6.07-.6 1 .07 1.53 1.03 1.53 1.03.9 1.52 2.34 1.07 2.91.83.1-.65.35-1.09.63-1.34-2.22-.25-4.55-1.11-4.55-4.92 0-1.11.38-2 1.03-2.71-.1-.25-.45-1.29.1-2.64 0 0 .84-.27 2.75 1.02.79-.22 1.65-.33 2.5-.33.85 0 1.71.11 2.5.33 1.91-1.29 2.75-1.02 2.75-1.02.55 1.35.2 2.39.1 2.64.65.71 1.03 1.6 1.03 2.71 0 3.82-2.34 4.66-4.57 4.91.36.31.69.92.69 1.85V21c0 .27.16.59.67.5C19.14 20.16 22 16.42 22 12A10 10 0 0 0 12 2z"/></svg>
+                      <span>Sign in with GitHub</span>
+                    </a>
+                    <div class="flex items-center gap-2 my-1 select-none">
+                      <div class="flex-1 h-px bg-neutral-300/30 dark:bg-white/10"></div>
+                      <span class="text-[9px] text-neutral-400 font-medium font-mono uppercase">or manual</span>
+                      <div class="flex-1 h-px bg-neutral-300/30 dark:bg-white/10"></div>
+                    </div>
+                  {/if}
+
                   <span class="font-medium text-neutral-800 dark:text-neutral-300">GitHub Username</span>
                   <div class="flex gap-2">
                     <input 
@@ -1320,18 +1418,44 @@
                       bind:value={githubUsername}
                       class="flex-1 px-3 py-1.5 text-xs bg-neutral-900/5 dark:bg-white/5 border border-white/10 rounded-lg text-neutral-900 dark:text-neutral-100 select-text cursor-text focus:outline-none focus:ring-1 focus:ring-blue-500"
                     />
-                    <button 
-                      class="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition-all active:scale-95 cursor-pointer shadow-md"
-                      onclick={updateGithubAvatar}
-                    >
-                      Apply
-                    </button>
+                    {#if githubUsername}
+                      <button 
+                        class="px-3.5 py-1.5 rounded-lg bg-red-600 hover:bg-red-500 text-white font-medium text-xs transition-all active:scale-95 cursor-pointer shadow-md"
+                        onclick={() => {
+                          githubUsername = '';
+                          updateGithubAvatar();
+                        }}
+                        title="Sign Out"
+                      >
+                        Sign Out
+                      </button>
+                    {:else}
+                      <button 
+                        class="px-3.5 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition-all active:scale-95 cursor-pointer shadow-md"
+                        onclick={updateGithubAvatar}
+                      >
+                        Apply
+                      </button>
+                    {/if}
                   </div>
+                  {#if typeof import.meta !== 'undefined' && import.meta.env && import.meta.env.VITE_GIT_USERNAME && githubUsername !== import.meta.env.VITE_GIT_USERNAME}
+                    <button 
+                      type="button"
+                      class="w-full text-center mt-2 px-3 py-1.5 rounded-lg border border-neutral-200/50 dark:border-white/10 hover:bg-neutral-900/10 dark:hover:bg-white/10 text-neutral-800 dark:text-neutral-200 text-xs font-semibold transition-all active:scale-98 cursor-pointer flex items-center justify-center gap-1.5"
+                      onclick={() => {
+                        githubUsername = import.meta.env.VITE_GIT_USERNAME;
+                        updateGithubAvatar();
+                      }}
+                    >
+                      <span>👤</span>
+                      <span>Autofill as {import.meta.env.VITE_GIT_USERNAME} (detected from local git)</span>
+                    </button>
+                  {/if}
                 </div>
               </div>
             </div>
             <p class="text-[10px] text-neutral-500 leading-relaxed">
-              Your public avatar is retrieved directly from GitHub. This avatar will represent you in the Community Gallery if you submit your custom backgrounds!
+              Your public avatar is retrieved directly from GitHub and loaded automatically as you type. This avatar represents you in the Community Gallery if you submit custom backgrounds!
             </p>
           </div>
         {/if}
@@ -1373,7 +1497,7 @@
       </form>
 
       <!-- Bottom Row: Controls & Quick Actions -->
-      <div class="flex items-center justify-between gap-2 border-t border-neutral-250/20 dark:border-white/5 pt-2.5">
+      <div class="flex items-center justify-between gap-2 border-t border-neutral-200/20 dark:border-white/5 pt-2.5">
         
         <!-- Left: Action Group -->
         <div class="flex items-center gap-1 bg-black/5 dark:bg-white/5 p-0.5 rounded-full border border-white/5 shadow-inner select-none">
@@ -1482,6 +1606,17 @@
             title="Toggle Floating Chat Feed"
           >
             <MessageSquare size={14} />
+          </button>
+
+          <!-- Help Guide Toggle -->
+          <button 
+            type="button"
+            class="p-2 rounded-full transition-all hover:scale-105 active:scale-90 cursor-pointer flex items-center justify-center 
+              {showOverlay ? 'bg-blue-600 text-white shadow-md' : 'text-neutral-800 dark:text-neutral-300 hover:bg-neutral-950/5 dark:hover:bg-white/10'}"
+            onclick={() => showOverlay = !showOverlay}
+            title="Show Guide & Instructions"
+          >
+            <HelpCircle size={14} />
           </button>
         </div>
 

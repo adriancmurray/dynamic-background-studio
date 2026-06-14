@@ -651,154 +651,113 @@
   <!-- Floating AI Chat Feed (Anchored above the bottom Command Center) -->
   {#if showChat}
     <div 
-      class="fixed bottom-[136px] left-1/2 -translate-x-1/2 z-20 w-[92%] max-w-2xl bg-white/60 dark:bg-black/45 backdrop-blur-2xl border border-neutral-200/50 dark:border-white/10 rounded-3xl shadow-xl flex flex-col overflow-hidden max-h-[50vh] transition-all duration-300 select-text"
+      bind:this={chatFeedContainer}
+      class="fixed bottom-[136px] left-1/2 -translate-x-1/2 z-20 w-[92%] max-w-2xl max-h-[55vh] overflow-y-auto scrollbar-none pointer-events-none flex flex-col gap-4 p-4 select-text transition-all duration-300"
       transition:fly={{ y: 20, duration: 250 }}
     >
-      <!-- Chat Header -->
-      <div class="px-4 py-2.5 border-b border-neutral-200/50 dark:border-white/10 flex items-center justify-between bg-neutral-50/50 dark:bg-neutral-900/50 select-none">
-        <div class="flex items-center gap-1.5">
-          <div class="p-1 rounded-md bg-blue-600 text-white flex items-center justify-center">
-            <MessageSquare size={11} />
+      {#if chatMessages.length === 0}
+        <div class="mx-auto my-auto p-6 rounded-3xl bg-white/40 dark:bg-black/35 backdrop-blur-xl border border-neutral-200/35 dark:border-white/10 shadow-lg flex flex-col items-center justify-center text-center max-w-sm pointer-events-auto transition-all duration-300">
+          <div class="p-3 rounded-full bg-neutral-100/50 dark:bg-neutral-900/50 mb-2.5 text-neutral-500 dark:text-neutral-400">
+            <MessageSquare size={20} />
           </div>
-          <span class="font-bold text-[10px] text-neutral-800 dark:text-white uppercase tracking-wider font-mono">
-            AI Design Session
-          </span>
-        </div>
-        <div class="flex items-center gap-1.5">
-          <button 
-            class="px-2.5 py-1 rounded-lg text-neutral-600 dark:text-neutral-300 hover:bg-neutral-900/5 dark:hover:bg-white/5 transition-all cursor-pointer flex items-center gap-1 text-[10px] font-semibold font-mono border border-neutral-200/40 dark:border-white/5 shadow-sm bg-neutral-900/5 dark:bg-white/5"
-            onclick={clearChatHistory}
-            title="Start New Chat"
-          >
-            <Plus size={10} />
-            <span>New Chat</span>
-          </button>
+          <p class="text-xs font-bold text-neutral-800 dark:text-neutral-200 tracking-wide">AI Design Partner</p>
+          <p class="text-[10.5px] text-neutral-600 dark:text-neutral-455 max-w-[220px] mt-1.5 leading-normal mb-4">
+            Describe your dream aesthetic, or customize your existing canvas with AI!
+          </p>
           
-          {#if chatMessages.length > 0}
+          <div class="flex flex-col gap-2 w-full max-w-[250px]">
             <button 
-              class="p-1.5 rounded-lg text-neutral-500 hover:text-red-500 hover:bg-neutral-900/5 dark:hover:bg-white/5 transition-all cursor-pointer flex items-center justify-center"
-              onclick={clearChatHistory}
-              title="Clear Chat History"
+              class="px-3.5 py-2 text-[10px] font-bold text-left rounded-xl border border-neutral-200/50 dark:border-white/10 hover:bg-neutral-900/10 dark:hover:bg-white/10 text-neutral-800 dark:text-neutral-200 transition-all cursor-pointer flex items-center gap-2 bg-white/50 dark:bg-white/5 shadow-sm"
+              onclick={() => {
+                const input = document.getElementsByName('chatPrompt')[0] as HTMLInputElement;
+                if (input) input.focus();
+              }}
             >
-              <Trash2 size={12} />
+              <span>✨</span>
+              <span>Create new design from scratch</span>
             </button>
-          {/if}
-          <button 
-            class="p-1.5 rounded-lg text-neutral-500 hover:text-neutral-800 dark:hover:text-white hover:bg-neutral-900/5 dark:hover:bg-white/5 transition-all cursor-pointer flex items-center justify-center"
-            onclick={() => showChat = false}
-            title="Hide Chat"
-          >
-            <X size={12} />
-          </button>
+            <button 
+              class="px-3.5 py-2 text-[10px] font-bold text-left rounded-xl border border-neutral-200/50 dark:border-white/10 hover:bg-neutral-900/10 dark:hover:bg-white/10 text-neutral-800 dark:text-neutral-200 transition-all cursor-pointer flex items-center gap-2 bg-white/50 dark:bg-white/5 shadow-sm"
+              onclick={attachCurrentCanvasMessage}
+            >
+              <span>✏️</span>
+              <span>Modify current background</span>
+            </button>
+          </div>
         </div>
-      </div>
-
-      <!-- Chat Messages Feed -->
-      <div 
-        bind:this={chatFeedContainer}
-        class="flex-1 overflow-y-auto p-4 space-y-3.5 select-text"
-      >
-        {#if chatMessages.length === 0}
-          <div class="h-full flex flex-col items-center justify-center text-center p-6 text-neutral-500 my-4">
-            <div class="p-3 rounded-full bg-neutral-100 dark:bg-neutral-900 mb-2.5 text-neutral-400">
-              <MessageSquare size={20} />
-            </div>
-            <p class="text-xs font-semibold text-neutral-800 dark:text-neutral-300">AI Design Partner</p>
-            <p class="text-[10px] max-w-[200px] mt-1 leading-normal mb-4">
-              Describe your dream aesthetic, or customize your existing canvas with AI!
-            </p>
-            
-            <div class="flex flex-col gap-2 w-full max-w-[250px]">
-              <button 
-                class="px-3.5 py-2 text-[10px] font-semibold text-left rounded-xl border border-neutral-200 dark:border-white/10 hover:bg-neutral-900/5 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-all cursor-pointer flex items-center gap-2 bg-white/40 dark:bg-black/10 shadow-sm"
-                onclick={() => {
-                  const input = document.getElementsByName('chatPrompt')[0] as HTMLInputElement;
-                  if (input) input.focus();
-                }}
+      {:else}
+        {#each chatMessages as msg (msg.id)}
+          <div 
+            class="flex flex-col gap-1 {msg.role === 'user' ? 'items-end' : 'items-start'} pointer-events-none"
+            transition:fly={{ y: 15, duration: 250 }}
+          >
+            <!-- Bubble -->
+            {#if msg.role === 'user' && msg.config}
+              <div 
+                class="max-w-[85%] px-3.5 py-2 rounded-2xl text-xs leading-normal relative transition-all duration-300 bg-blue-500/10 dark:bg-blue-500/15 border border-blue-500/20 text-blue-600 dark:text-blue-400 rounded-tr-none flex items-center gap-2 shadow-sm font-sans backdrop-blur-sm pointer-events-auto hover:bg-blue-500/15 dark:hover:bg-blue-500/25"
               >
-                <span>✨</span>
-                <span>Create new design from scratch</span>
-              </button>
-              <button 
-                class="px-3.5 py-2 text-[10px] font-semibold text-left rounded-xl border border-neutral-200 dark:border-white/10 hover:bg-neutral-900/5 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-all cursor-pointer flex items-center gap-2 bg-white/40 dark:bg-black/10 shadow-sm"
-                onclick={attachCurrentCanvasMessage}
+                <Layers size={11} />
+                <span>Referencing active <strong class="capitalize font-mono font-bold">{msg.presetId}</strong> design</span>
+              </div>
+            {:else}
+              <div 
+                class="max-w-[85%] px-4 py-2.5 rounded-2xl text-xs leading-normal relative transition-all duration-300 pointer-events-auto select-text
+                  {msg.role === 'user' 
+                    ? 'bg-gradient-to-br from-blue-600 to-blue-700 dark:from-blue-500/90 dark:to-blue-650/90 text-white rounded-tr-none shadow-md shadow-blue-500/5 border border-blue-500/15' 
+                    : msg.isError 
+                      ? 'bg-red-500/10 dark:bg-red-500/15 backdrop-blur-md border border-red-500/30 dark:border-red-500/25 text-red-750 dark:text-red-400 rounded-tl-none shadow-sm shadow-red-500/5'
+                      : 'bg-white/80 dark:bg-neutral-900/40 backdrop-blur-xl border border-neutral-250/50 dark:border-white/10 text-neutral-950 dark:text-neutral-250 rounded-tl-none shadow-md shadow-black/5 hover:bg-white/85 dark:hover:bg-neutral-900/45'}"
               >
-                <span>✏️</span>
-                <span>Modify current background</span>
-              </button>
-            </div>
-          </div>
-        {:else}
-          {#each chatMessages as msg (msg.id)}
-            <div class="flex flex-col gap-1 {msg.role === 'user' ? 'items-end' : 'items-start'}">
-              <!-- Bubble -->
-              {#if msg.role === 'user' && msg.config}
-                <div 
-                  class="max-w-[85%] px-3.5 py-2 rounded-2xl text-xs leading-normal relative transition-all duration-300 bg-blue-500/10 dark:bg-blue-500/20 border border-blue-500/20 text-blue-600 dark:text-blue-400 rounded-tr-none flex items-center gap-2 shadow-sm font-sans"
-                >
-                  <Layers size={11} />
-                  <span>Referencing active <strong class="capitalize font-mono font-bold">{msg.presetId}</strong> design</span>
-                </div>
-              {:else}
-                <div 
-                  class="max-w-[85%] px-3.5 py-2.5 rounded-2xl text-xs leading-normal relative transition-all duration-300
-                    {msg.role === 'user' 
-                      ? 'bg-blue-600 text-white rounded-tr-none shadow-sm' 
-                      : msg.isError 
-                        ? 'bg-red-500/10 dark:bg-red-500/15 border border-red-500/20 text-red-650 dark:text-red-400 rounded-tl-none'
-                        : 'bg-neutral-100 dark:bg-white/5 border border-neutral-200/50 dark:border-white/5 text-neutral-800 dark:text-neutral-200 rounded-tl-none'}"
-                >
-                  {#if msg.isError}
-                    <div class="flex items-start gap-1.5">
-                      <span class="mt-0.5">⚠️</span>
-                      <span>{msg.content}</span>
-                    </div>
-                  {:else}
-                    {msg.content}
-                  {/if}
-                </div>
-              {/if}
-
-              <!-- Restore Action Card (if assistant message has preset configs) -->
-              {#if msg.role === 'assistant' && msg.presetId && msg.config}
-                <div 
-                  class="w-full max-w-[85%] mt-1.5 p-2 rounded-xl bg-neutral-50/50 dark:bg-white/5 border border-neutral-200/30 dark:border-white/5 flex items-center justify-between gap-3 text-[10px]"
-                  transition:fade
-                >
-                  <div class="flex items-center gap-1.5 text-neutral-600 dark:text-neutral-400">
-                    <div class="w-1.5 h-1.5 rounded-full bg-emerald-500"></div>
-                    <span class="font-medium capitalize truncate max-w-[100px]">{msg.presetId}</span>
+                {#if msg.isError}
+                  <div class="flex items-start gap-1.5">
+                    <span class="mt-0.5">⚠️</span>
+                    <span>{msg.content}</span>
                   </div>
-                  <button 
-                    class="px-2 py-1 rounded bg-neutral-900/5 dark:bg-white/5 hover:bg-neutral-900/10 dark:hover:bg-white/10 hover:text-neutral-900 dark:hover:text-white transition-all text-neutral-500 font-medium flex items-center gap-1 cursor-pointer"
-                    onclick={() => restoreChatMessagePreset(msg)}
-                    title="Apply this exact design state"
-                  >
-                    <RotateCcw size={10} />
-                    <span>Restore Design</span>
-                  </button>
+                {:else}
+                  {msg.content}
+                {/if}
+              </div>
+            {/if}
+
+            <!-- Restore Action Card (if assistant message has preset configs) -->
+            {#if msg.role === 'assistant' && msg.presetId && msg.config}
+              <div 
+                class="w-full max-w-[85%] mt-1.5 p-2.5 rounded-xl bg-white/70 dark:bg-neutral-900/35 backdrop-blur-md border border-neutral-250/45 dark:border-white/5 flex items-center justify-between gap-3 text-[10px] pointer-events-auto shadow-md"
+                transition:fade
+              >
+                <div class="flex items-center gap-1.5 text-neutral-600 dark:text-neutral-450">
+                  <div class="w-1.5 h-1.5 rounded-full bg-emerald-500 shadow-sm shadow-emerald-500/50 animate-pulse"></div>
+                  <span class="font-bold capitalize truncate max-w-[100px]">{msg.presetId}</span>
                 </div>
-              {/if}
+                <button 
+                  class="px-2.5 py-1 rounded bg-neutral-900/5 dark:bg-white/5 hover:bg-neutral-900/10 dark:hover:bg-white/10 hover:text-neutral-900 dark:hover:text-white transition-all text-neutral-500 font-semibold flex items-center gap-1 cursor-pointer border border-neutral-200/40 dark:border-white/5 shadow-sm"
+                  onclick={() => restoreChatMessagePreset(msg)}
+                  title="Apply this exact design state"
+                >
+                  <RotateCcw size={10} />
+                  <span>Restore Design</span>
+                </button>
+              </div>
+            {/if}
 
-              <!-- Timestamp -->
-              <span class="text-[9px] text-neutral-400 dark:text-neutral-600 px-1 font-mono">
-                {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-              </span>
-            </div>
-          {/each}
-        {/if}
-
-        <!-- Typing indicator -->
-        {#if aiLoading}
-          <div class="flex flex-col gap-1 items-start" transition:fade>
-            <div class="px-3.5 py-3 rounded-2xl rounded-tl-none bg-neutral-100 dark:bg-white/5 border border-neutral-200/50 dark:border-white/5 flex items-center gap-1">
-              <span class="w-1.5 h-1.5 rounded-full bg-neutral-500 animate-bounce" style="animation-delay: 0ms"></span>
-              <span class="w-1.5 h-1.5 rounded-full bg-neutral-500 animate-bounce" style="animation-delay: 150ms"></span>
-              <span class="w-1.5 h-1.5 rounded-full bg-neutral-500 animate-bounce" style="animation-delay: 300ms"></span>
-            </div>
+            <!-- Timestamp -->
+            <span class="text-[9px] text-neutral-450 dark:text-neutral-550 px-2 font-mono select-none">
+              {new Date(msg.timestamp).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+            </span>
           </div>
-        {/if}
-      </div>
+        {/each}
+      {/if}
+
+      <!-- Typing indicator -->
+      {#if aiLoading}
+        <div class="flex flex-col gap-1 items-start pointer-events-none" transition:fade>
+          <div class="px-4 py-3 rounded-2xl rounded-tl-none bg-white/80 dark:bg-neutral-900/40 backdrop-blur-xl border border-neutral-250/50 dark:border-white/10 flex items-center gap-1 shadow-md pointer-events-auto">
+            <span class="w-1.5 h-1.5 rounded-full bg-neutral-500 animate-bounce" style="animation-delay: 0ms"></span>
+            <span class="w-1.5 h-1.5 rounded-full bg-neutral-500 animate-bounce" style="animation-delay: 150ms"></span>
+            <span class="w-1.5 h-1.5 rounded-full bg-neutral-500 animate-bounce" style="animation-delay: 300ms"></span>
+          </div>
+        </div>
+      {/if}
     </div>
   {/if}
 
@@ -1629,6 +1588,16 @@
 </div>
 
 <style>
+  /* Hide scrollbar for Chrome, Safari and Opera */
+  .scrollbar-none::-webkit-scrollbar {
+    display: none;
+  }
+  /* Hide scrollbar for IE, Edge and Firefox */
+  .scrollbar-none {
+    -ms-overflow-style: none;  /* IE and Edge */
+    scrollbar-width: none;  /* Firefox */
+  }
+
   /* Subtle CSS micro-animations */
   @keyframes scale-in {
     0% { transform: scale(0.92); opacity: 0; }

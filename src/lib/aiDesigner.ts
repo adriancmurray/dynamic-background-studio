@@ -146,6 +146,8 @@ import type { CommunityPreset } from './galleryFetcher'
 export async function askAIDesigner(
   messages: ChatMessage[],
   aiConfig: AIConfig,
+  activePresetId: string,
+  activeConfig: Record<string, any>,
   galleryPresets?: CommunityPreset[]
 ): Promise<AIResponse> {
   let galleryContext = ''
@@ -158,6 +160,10 @@ Here are the available Community Gallery presets:
 ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", Base Background Type: "${p.basePresetId}", Creator: "@${p.creator}", Description: "${p.description}", Config: ${JSON.stringify(p.config)}`).join('\n')}
 `
   }
+
+  const currentStateInstruction = `\n\nCRITICAL CONTEXT: The user is currently looking at the background preset "${activePresetId}" with configuration: ${JSON.stringify(activeConfig)}.
+If the user asks for modifications or refinements (e.g., "speed it up", "change the colors", "make it denser", "make it slower"), you MUST use this current configuration as your base, keeping the same preset and modifying ONLY the parameters necessary to fulfill their request.
+If the user asks for a completely new theme, style, or preset (e.g., "make a starry night", "nebula"), feel free to select a different preset and build a new configuration from scratch.`
 
   if (aiConfig.provider === 'gemini') {
     if (!aiConfig.apiKey) {
@@ -207,7 +213,7 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
           body: JSON.stringify({
             contents,
             systemInstruction: {
-              parts: [{ text: SYSTEM_INSTRUCTION + galleryContext }]
+              parts: [{ text: SYSTEM_INSTRUCTION + galleryContext + currentStateInstruction }]
             },
             generationConfig: {
               responseMimeType: 'application/json',
@@ -246,7 +252,7 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
     const model = aiConfig.ollamaModel || 'gemma4'
 
     const messagesPayload = [
-      { role: 'system', content: SYSTEM_INSTRUCTION + galleryContext },
+      { role: 'system', content: SYSTEM_INSTRUCTION + galleryContext + currentStateInstruction },
       ...messages.filter(m => !m.isError).map(msg => ({
         role: msg.role === 'assistant' ? 'assistant' : 'user',
         content: msg.role === 'assistant' 
@@ -299,7 +305,9 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
       body: JSON.stringify({
         messages: messagesPayload,
         galleryPresets,
-        model: aiConfig.cfModel
+        model: aiConfig.cfModel,
+        activePresetId,
+        activeConfig
       }),
     })
 

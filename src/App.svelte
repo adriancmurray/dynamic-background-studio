@@ -24,6 +24,7 @@
     MessageSquare,
     Send,
     Trash2,
+    Plus,
   } from '@lucide/svelte'
 
   // Import dynamic backgrounds
@@ -357,7 +358,7 @@
         geminiModel
       }
       
-      const response = await askAIDesigner(chatMessages, config, communityPresets)
+      const response = await askAIDesigner(chatMessages, config, activePresetId, configs[activePresetId], communityPresets)
       
       const assistantMsg: ChatMessage = {
         id: crypto.randomUUID(),
@@ -1343,6 +1344,15 @@
           </span>
         </div>
         <div class="flex items-center gap-1">
+          <button 
+            class="px-2.5 py-1 rounded-lg text-neutral-600 dark:text-neutral-300 hover:bg-neutral-900/5 dark:hover:bg-white/5 transition-all cursor-pointer flex items-center gap-1 text-[10px] font-semibold font-mono border border-neutral-200/40 dark:border-white/5 shadow-sm bg-neutral-900/5 dark:bg-white/5"
+            onclick={clearChatHistory}
+            title="Start New Chat"
+          >
+            <Plus size={10} />
+            <span>New Chat</span>
+          </button>
+          
           {#if chatMessages.length > 0}
             <button 
               class="p-1.5 rounded-lg text-neutral-500 hover:text-red-500 hover:bg-neutral-900/5 dark:hover:bg-white/5 transition-all cursor-pointer flex items-center justify-center"

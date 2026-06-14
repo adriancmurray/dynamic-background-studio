@@ -1,0 +1,85 @@
+@import "tailwindcss";
+
+:root {
+  --font-sans: 'Outfit', 'Inter', -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
+  --font-mono: 'JetBrains Mono', 'Fira Code', SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
+  
+  /* Apple HIG-inspired colors */
+  --bg-studio-light: #f5f5f7;
+  --bg-studio-dark: #000000;
+  
+  --panel-light: rgba(255, 255, 255, 0.72);
+  --panel-dark: rgba(22, 22, 23, 0.72);
+  
+  --border-light: rgba(0, 0, 0, 0.08);
+  --border-dark: rgba(255, 255, 255, 0.08);
+  
+  --text-light: #1d1d1f;
+  --text-dark: #f5f5f7;
+  
+  --accent-blue: #0071e3;
+}
+
+:root[data-theme="dark"] {
+  --bg-studio: var(--bg-studio-dark);
+  --panel-bg: var(--panel-dark);
+  --border-color: var(--border-dark);
+  --text-primary: var(--text-dark);
+  color-scheme: dark;
+}
+
+:root[data-theme="light"] {
+  --bg-studio: var(--bg-studio-light);
+  --panel-bg: var(--panel-light);
+  --border-color: var(--border-light);
+  --text-primary: var(--text-light);
+  color-scheme: light;
+}
+
+/* System default if data-theme is not yet set */
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg-studio: var(--bg-studio-dark);
+    --panel-bg: var(--panel-dark);
+    --border-color: var(--border-dark);
+    --text-primary: var(--text-dark);
+    color-scheme: dark;
+  }
+}
+@media (prefers-color-scheme: light) {
+  :root:not([data-theme="dark"]) {
+    --bg-studio: var(--bg-studio-light);
+    --panel-bg: var(--panel-light);
+    --border-color: var(--border-light);
+    --text-primary: var(--text-light);
+    color-scheme: light;
+  }
+}
+
+body {
+  background-color: var(--bg-studio);
+  color: var(--text-primary);
+  font-family: var(--font-sans);
+  margin: 0;
+  padding: 0;
+  height: 100dvh;
+  width: 100vw;
+  overflow: hidden;
+  -webkit-font-smoothing: antialiased;
+}
+
+/* Custom scrollbars for a clean workspace feel */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: rgba(120, 120, 120, 0.15);
+  border-radius: 9999px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: rgba(120, 120, 120, 0.3);
+}

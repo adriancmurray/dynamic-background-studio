@@ -16,6 +16,11 @@ export interface AIResponse {
 const SYSTEM_INSTRUCTION = `You are an expert creative frontend web designer.
 Your task is to take a design description from a user and translate it into a Svelte background configuration.
 
+CONVERSATIONAL FLOW:
+- The user may reference/attach their current active design configuration inside the conversation history as a JSON object containing "presetId" and "config".
+- If you see a referenced configuration in the history, you MUST use it as your base for adjustments, preserving its other parameters unless explicitly asked to modify them (e.g. "make the speed faster", "change color").
+- If there is NO referenced configuration or previous history, you should generate a completely new design from scratch.
+
 You must output a JSON object matching this structure:
 {
   "presetId": "dotfield" | "constellation" | "flowfield" | "aurora" | "jellyfish" | "matrix" | "nebula" | "hexgrid" | "fireflies" | "synthwave" | "voronoi",
@@ -161,9 +166,7 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
 `
   }
 
-  const currentStateInstruction = `\n\nCRITICAL CONTEXT: The user is currently looking at the background preset "${activePresetId}" with configuration: ${JSON.stringify(activeConfig)}.
-If the user asks for modifications or refinements (e.g., "speed it up", "change the colors", "make it denser", "make it slower"), you MUST use this current configuration as your base, keeping the same preset and modifying ONLY the parameters necessary to fulfill their request.
-If the user asks for a completely new theme, style, or preset (e.g., "make a starry night", "nebula"), feel free to select a different preset and build a new configuration from scratch.`
+  const currentStateInstruction = ''
 
   if (aiConfig.provider === 'gemini') {
     if (!aiConfig.apiKey) {
@@ -191,11 +194,11 @@ If the user asks for a completely new theme, style, or preset (e.g., "make a sta
       role: msg.role === 'assistant' ? 'model' : 'user',
       parts: [
         {
-          text: msg.role === 'assistant'
+          text: msg.config
             ? JSON.stringify({
                 presetId: msg.presetId,
                 config: msg.config,
-                explanation: msg.content
+                message: msg.content
               })
             : msg.content
         }
@@ -255,8 +258,8 @@ If the user asks for a completely new theme, style, or preset (e.g., "make a sta
       { role: 'system', content: SYSTEM_INSTRUCTION + galleryContext + currentStateInstruction },
       ...messages.filter(m => !m.isError).map(msg => ({
         role: msg.role === 'assistant' ? 'assistant' : 'user',
-        content: msg.role === 'assistant' 
-          ? JSON.stringify({ presetId: msg.presetId, config: msg.config, explanation: msg.content })
+        content: msg.config 
+          ? JSON.stringify({ presetId: msg.presetId, config: msg.config, message: msg.content })
           : msg.content
       }))
     ]
@@ -291,8 +294,8 @@ If the user asks for a completely new theme, style, or preset (e.g., "make a sta
   } else if (aiConfig.provider === 'workers-ai') {
     const messagesPayload = messages.filter(m => !m.isError).map(msg => ({
       role: msg.role === 'assistant' ? 'assistant' : 'user',
-      content: msg.role === 'assistant' 
-        ? JSON.stringify({ presetId: msg.presetId, config: msg.config, explanation: msg.content })
+      content: msg.config 
+        ? JSON.stringify({ presetId: msg.presetId, config: msg.config, message: msg.content })
         : msg.content
     }))
 

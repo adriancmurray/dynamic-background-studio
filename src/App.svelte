@@ -408,6 +408,25 @@
     aiError = ''
   }
 
+  function attachCurrentCanvasMessage() {
+    const refMsg: ChatMessage = {
+      id: crypto.randomUUID(),
+      role: 'user',
+      content: `Base the next modifications on this design (${activePreset.name}).`,
+      presetId: activePresetId,
+      config: JSON.parse(JSON.stringify(configs[activePresetId])),
+      timestamp: Date.now()
+    }
+    chatMessages = [...chatMessages, refMsg]
+    showChat = true
+    
+    // Focus the chat input field
+    setTimeout(() => {
+      const input = document.getElementsByName('chatPrompt')[0] as HTMLInputElement;
+      if (input) input.focus();
+    }, 50);
+  }
+
   function restoreChatMessagePreset(msg: ChatMessage) {
     if (msg.presetId && msg.config) {
       activePresetId = msg.presetId
@@ -1382,32 +1401,61 @@
             <div class="p-3.5 rounded-full bg-neutral-100 dark:bg-neutral-900 mb-3 text-neutral-400">
               <MessageSquare size={24} />
             </div>
-            <p class="text-xs font-medium text-neutral-800 dark:text-neutral-300">Start a conversation</p>
-            <p class="text-[10px] max-w-[200px] mt-1 leading-normal">
-              Ask the AI to design a background, customize colors, speed, or mix existing components!
+            <p class="text-xs font-semibold text-neutral-800 dark:text-neutral-300">AI Design Partner</p>
+            <p class="text-[10px] max-w-[200px] mt-1 leading-normal mb-5">
+              Describe your dream aesthetic, or customize your existing canvas with AI!
             </p>
+            
+            <div class="flex flex-col gap-2 w-full max-w-[250px]">
+              <button 
+                class="px-3.5 py-2 text-[10px] font-semibold text-left rounded-xl border border-neutral-200 dark:border-white/10 hover:bg-neutral-900/5 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-all cursor-pointer flex items-center gap-2 bg-white/40 dark:bg-black/10 shadow-sm"
+                onclick={() => {
+                  const input = document.getElementsByName('chatPrompt')[0] as HTMLInputElement;
+                  if (input) input.focus();
+                }}
+              >
+                <span>✨</span>
+                <span>Create new design from scratch</span>
+              </button>
+              <button 
+                class="px-3.5 py-2 text-[10px] font-semibold text-left rounded-xl border border-neutral-200 dark:border-white/10 hover:bg-neutral-900/5 dark:hover:bg-white/5 text-neutral-800 dark:text-neutral-200 transition-all cursor-pointer flex items-center gap-2 bg-white/40 dark:bg-black/10 shadow-sm"
+                onclick={attachCurrentCanvasMessage}
+              >
+                <span>✏️</span>
+                <span>Modify current background</span>
+              </button>
+            </div>
           </div>
         {:else}
           {#each chatMessages as msg (msg.id)}
             <div class="flex flex-col gap-1 {msg.role === 'user' ? 'items-end' : 'items-start'}">
               <!-- Bubble -->
-              <div 
-                class="max-w-[85%] px-3.5 py-2.5 rounded-2xl text-xs leading-normal relative transition-all duration-300
-                  {msg.role === 'user' 
-                    ? 'bg-blue-600 text-white rounded-tr-none shadow-sm' 
-                    : msg.isError 
-                      ? 'bg-red-500/10 dark:bg-red-500/15 border border-red-500/20 text-red-650 dark:text-red-400 rounded-tl-none'
-                      : 'bg-neutral-100 dark:bg-white/5 border border-neutral-200/50 dark:border-white/5 text-neutral-800 dark:text-neutral-200 rounded-tl-none'}"
-              >
-                {#if msg.isError}
-                  <div class="flex items-start gap-1.5">
-                    <span class="mt-0.5">⚠️</span>
-                    <span>{msg.content}</span>
-                  </div>
-                {:else}
-                  {msg.content}
-                {/if}
-              </div>
+              {#if msg.role === 'user' && msg.config}
+                <div 
+                  class="max-w-[85%] px-3.5 py-2 rounded-2xl text-xs leading-normal relative transition-all duration-300 bg-blue-500/10 dark:bg-blue-500/20 border border-blue-500/20 text-blue-600 dark:text-blue-400 rounded-tr-none flex items-center gap-2 shadow-sm font-sans"
+                >
+                  <Layers size={11} />
+                  <span>Referencing active <strong class="capitalize font-mono font-bold">{msg.presetId}</strong> design</span>
+                </div>
+              {:else}
+                <div 
+                  class="max-w-[85%] px-3.5 py-2.5 rounded-2xl text-xs leading-normal relative transition-all duration-300
+                    {msg.role === 'user' 
+                      ? 'bg-blue-600 text-white rounded-tr-none shadow-sm' 
+                      : msg.isError 
+                        ? 'bg-red-500/10 dark:bg-red-500/15 border border-red-500/20 text-red-650 dark:text-red-400 rounded-tl-none'
+                        : 'bg-neutral-100 dark:bg-white/5 border border-neutral-200/50 dark:border-white/5 text-neutral-800 dark:text-neutral-200 rounded-tl-none'}"
+                >
+                  {#if msg.isError}
+                    <div class="flex items-start gap-1.5">
+                      <span class="mt-0.5">⚠️</span>
+                      <span>{msg.content}</span>
+                    </div>
+                  {:else}
+                    {msg.content}
+                  {/if}
+                </div>
+              {/if}
 
               <!-- Restore Action Card (if assistant message has preset configs) -->
               {#if msg.role === 'assistant' && msg.presetId && msg.config}
@@ -1463,6 +1511,15 @@
           }}
           class="flex gap-2"
         >
+          <button 
+            type="button"
+            disabled={aiLoading}
+            class="p-2 rounded-xl border border-neutral-200 dark:border-white/10 text-neutral-500 hover:text-neutral-800 dark:hover:text-white hover:bg-neutral-900/5 dark:hover:bg-white/5 transition-all cursor-pointer flex items-center justify-center disabled:opacity-50"
+            onclick={attachCurrentCanvasMessage}
+            title="Reference current canvas state"
+          >
+            <Layers size={12} />
+          </button>
           <input 
             name="chatPrompt"
             type="text" 

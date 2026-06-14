@@ -5,6 +5,11 @@ interface Env {
 const SYSTEM_INSTRUCTION = `You are an expert creative frontend web designer.
 Your task is to take a design description from a user and translate it into a Svelte background configuration.
 
+CONVERSATIONAL FLOW:
+- The user may reference/attach their current active design configuration inside the conversation history as a JSON object containing "presetId" and "config".
+- If you see a referenced configuration in the history, you MUST use it as your base for adjustments, preserving its other parameters unless explicitly asked to modify them (e.g. "make the speed faster", "change color").
+- If there is NO referenced configuration or previous history, you should generate a completely new design from scratch.
+
 You must output a JSON object matching this structure:
 {
   "presetId": "dotfield" | "constellation" | "flowfield" | "aurora" | "jellyfish" | "matrix" | "nebula" | "hexgrid" | "fireflies" | "synthwave" | "voronoi",
@@ -158,12 +163,7 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
 `
     }
 
-    let currentStateInstruction = ''
-    if (activePresetId && activeConfig) {
-      currentStateInstruction = `\n\nCRITICAL CONTEXT: The user is currently looking at the background preset "${activePresetId}" with configuration: ${JSON.stringify(activeConfig)}.
-If the user asks for modifications or refinements (e.g., "speed it up", "change the colors", "make it denser", "make it slower"), you MUST use this current configuration as your base, keeping the same preset and modifying ONLY the parameters necessary to fulfill their request.
-If the user asks for a completely new theme, style, or preset (e.g., "make a starry night", "nebula"), feel free to select a different preset and build a new configuration from scratch.`
-    }
+    const currentStateInstruction = ''
 
     // Supported text generation models
     const allowedModels = [

@@ -132,7 +132,7 @@ export const onRequest: PagesFunction<Env> = async (context) => {
       return new Response('Cloudflare Workers AI binding is not configured', { status: 500 })
     }
 
-    const { prompt, galleryPresets } = await request.json<{ prompt: string; galleryPresets?: any[] }>().catch(() => ({ prompt: '', galleryPresets: [] }))
+    const { prompt, galleryPresets, model: requestedModel } = await request.json<{ prompt: string; galleryPresets?: any[]; model?: string }>().catch(() => ({ prompt: '', galleryPresets: [], model: '' }))
     if (!prompt) {
       return new Response('Prompt is required', { status: 400 })
     }
@@ -148,8 +148,15 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
 `
     }
 
-    // Call Llama 3.3 70B in Workers AI
-    const model = '@cf/meta/llama-3.3-70b-instruct-fp8-fast' // State-of-the-art 70B parameter model
+    // Supported text generation models
+    const allowedModels = [
+      '@cf/google/gemma-4-26b-a4b-it',
+      '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b',
+      '@cf/meta/llama-3.3-70b-instruct-fp8-fast',
+      '@cf/meta/llama-3.1-8b-instruct-fp8'
+    ]
+    const model = allowedModels.includes(requestedModel || '') ? requestedModel! : '@cf/google/gemma-4-26b-a4b-it'
+
     const response = await env.AI.run(model, {
       messages: [
         { role: 'system', content: SYSTEM_INSTRUCTION + galleryContext },

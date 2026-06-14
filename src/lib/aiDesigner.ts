@@ -3,6 +3,7 @@ export interface AIConfig {
   apiKey?: string
   ollamaModel?: string
   ollamaUrl?: string
+  cfModel?: string
 }
 
 export interface AIResponse {
@@ -246,7 +247,7 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
       headers: {
         'Content-Type': 'application/json',
       },
-      body: JSON.stringify({ prompt, galleryPresets }),
+      body: JSON.stringify({ prompt, galleryPresets, model: aiConfig.cfModel }),
     })
 
     if (!response.ok) {

@@ -120,6 +120,9 @@
   let ollamaUrl = $state(
     (typeof localStorage !== 'undefined' && localStorage.getItem('ai-ollama-url')) || 'http://localhost:11434'
   )
+  let cfModel = $state<'@cf/google/gemma-4-26b-a4b-it' | '@cf/deepseek-ai/deepseek-r1-distill-qwen-32b' | '@cf/meta/llama-3.3-70b-instruct-fp8-fast' | '@cf/meta/llama-3.1-8b-instruct-fp8'>(
+    (typeof localStorage !== 'undefined' && localStorage.getItem('ai-cf-model') as any) || '@cf/google/gemma-4-26b-a4b-it'
+  )
 
   let githubUsername = $state(
     (typeof localStorage !== 'undefined' && localStorage.getItem('studio-github-username')) || ''
@@ -141,6 +144,27 @@
   let loadingRepos = $state(false)
   let customRepoSelected = $state(false)
   let showCustomRepoInput = $derived(customRepoSelected || !githubUsername || userRepos.length === 0 || !userRepos.includes(galleryRepo))
+
+  // Local saved presets list (No GitHub friction)
+  interface LocalPreset {
+    id: string
+    name: string
+    basePresetId: string
+    config: Record<string, any>
+    timestamp: number
+  }
+
+  let localPresets = $state<LocalPreset[]>(
+    (typeof localStorage !== 'undefined' && JSON.parse(localStorage.getItem('studio-local-presets') || '[]')) || []
+  )
+  
+  // Custom name input for saving a design
+  let savePresetName = $state('')
+  let showSaveModal = $state(false)
+
+  // Share copy state
+  let shareCopyState = $state<'idle' | 'copied'>('idle')
+  let shareCopyTimeout = 0
 
   // --- Derived Filters ---
   let filteredCorePresets = $derived(
@@ -235,7 +259,10 @@
   $effect(() => { localStorage.setItem('ai-api-key', aiApiKey) })
   $effect(() => { localStorage.setItem('ai-ollama-model', ollamaModel) })
   $effect(() => { localStorage.setItem('ai-ollama-url', ollamaUrl) })
+  $effect(() => { localStorage.setItem('ai-cf-model', cfModel) })
   $effect(() => { localStorage.setItem('studio-gallery-repo', galleryRepo) })
+  $effect(() => { localStorage.setItem('studio-github-username', githubUsername) })
+  $effect(() => { localStorage.setItem('studio-local-presets', JSON.stringify(localPresets)) })
 
   function toggleTheme() {
     theme = theme === 'dark' ? 'light' : 'dark'
@@ -260,6 +287,17 @@
     })
   }
 
+  function copyShareLink() {
+    const url = window.location.href
+    navigator.clipboard.writeText(url).then(() => {
+      shareCopyState = 'copied'
+      if (shareCopyTimeout) clearTimeout(shareCopyTimeout)
+      shareCopyTimeout = window.setTimeout(() => {
+        shareCopyState = 'idle'
+      }, 2000)
+    })
+  }
+
   async function handleAiSubmit(e: SubmitEvent) {
     e.preventDefault()
     if (!aiPrompt.trim()) return
@@ -270,7 +308,8 @@
         provider: aiProvider,
         apiKey: aiApiKey,
         ollamaModel,
-        ollamaUrl
+        ollamaUrl,
+        cfModel
       }
       const response = await askAIDesigner(aiPrompt, config, communityPresets)
       activePresetId = response.presetId
@@ -316,6 +355,34 @@
     } else {
       islandMode = mode
     }
+  }
+
+  function triggerSavePreset() {
+    savePresetName = `My ${activePreset.name}`
+    showSaveModal = true
+  }
+
+  function handleSavePreset() {
+    const trimmed = savePresetName.trim()
+    if (!trimmed) return
+    const newPreset: LocalPreset = {
+      id: `local-${Date.now()}`,
+      name: trimmed,
+      basePresetId: activePresetId,
+      config: JSON.parse(JSON.stringify(activeConfig)),
+      timestamp: Date.now()
+    }
+    localPresets = [newPreset, ...localPresets]
+    showSaveModal = false
+  }
+
+  function loadLocalPreset(preset: LocalPreset) {
+    activePresetId = preset.basePresetId
+    configs[preset.basePresetId] = { ...configs[preset.basePresetId], ...preset.config }
+  }
+
+  function deleteLocalPreset(id: string) {
+    localPresets = localPresets.filter(p => p.id !== id)
   }
 
   // --- Code Generation Helpers ---
@@ -503,8 +570,64 @@
             </div>
 
             <div class="space-y-4 max-h-[35vh] overflow-y-auto pr-1">
-              <!-- Core Presets -->
+              <!-- My Saved Presets -->
               <div class="space-y-2">
+                <div class="flex items-center justify-between">
+                  <h2 class="text-[10px] font-semibold tracking-wider text-neutral-800 dark:text-neutral-300 uppercase font-mono">
+                    My Saved Presets ({localPresets.length})
+                  </h2>
+                  {#if localPresets.length > 0}
+                    <button 
+                      class="text-[10px] text-blue-500 hover:underline cursor-pointer"
+                      onclick={triggerSavePreset}
+                    >
+                      + Save Current
+                    </button>
+                  {/if}
+                </div>
+
+                {#if localPresets.length > 0}
+                  <div class="grid grid-cols-2 gap-2">
+                    {#each localPresets as preset}
+                      <div class="relative group flex items-center">
+                        <button 
+                          class="w-full p-2.5 rounded-xl border text-left transition-all duration-200 cursor-pointer {activePresetId === preset.basePresetId && JSON.stringify(activeConfig) === JSON.stringify(preset.config) ? 'border-blue-500 bg-blue-500/5' : 'border-white/10 dark:border-white/5 bg-white/5 dark:bg-white/5 hover:border-neutral-500'} pr-8 truncate"
+                          onclick={() => loadLocalPreset(preset)}
+                          title="Load {preset.name}"
+                        >
+                          <h3 class="font-medium text-xs text-neutral-950 dark:text-white mb-0.5 truncate">
+                            {preset.name}
+                          </h3>
+                          <p class="text-[8px] text-neutral-500 font-mono capitalize">
+                            Base: {preset.basePresetId}
+                          </p>
+                        </button>
+                        <!-- Delete button -->
+                        <button 
+                          class="absolute right-2 p-1.5 rounded hover:bg-red-500/10 text-neutral-400 hover:text-red-500 cursor-pointer transition-colors"
+                          onclick={(e) => { e.stopPropagation(); deleteLocalPreset(preset.id); }}
+                          title="Delete Preset"
+                        >
+                          <svg viewBox="0 0 24 24" width="12" height="12" stroke="currentColor" stroke-width="2" fill="none"><polyline points="3 6 5 6 21 6"></polyline><path d="M19 6v14a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6m3 0V4a2 2 0 0 1 2-2h4a2 2 0 0 1 2 2v2"></path></svg>
+                        </button>
+                      </div>
+                    {/each}
+                  </div>
+                {:else}
+                  <div class="p-3 text-center border border-dashed border-white/10 rounded-xl bg-neutral-900/5 dark:bg-white/5">
+                    <p class="text-[10px] text-neutral-500 mb-1.5">No saved designs yet.</p>
+                    <button 
+                      class="px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-medium text-[9px] transition-all cursor-pointer shadow-sm"
+                      onclick={triggerSavePreset}
+                    >
+                      Save Current Design
+                    </button>
+                  </div>
+                {/if}
+              </div>
+
+              <!-- Core Presets -->
+              <div class="space-y-2 border-t border-white/10 dark:border-white/5 pt-3">
                 <h2 class="text-[10px] font-semibold tracking-wider text-neutral-800 dark:text-neutral-300 uppercase font-mono">
                   Core Templates ({filteredCorePresets.length})
                 </h2>
@@ -631,13 +754,22 @@
               <h2 class="text-xs font-semibold tracking-wider text-neutral-800 dark:text-neutral-300 uppercase font-mono">
                 Adjust Settings: {activePreset.name}
               </h2>
-              <button 
-                class="flex items-center gap-1 text-[11px] text-neutral-800 dark:text-neutral-400 hover:text-blue-500 transition-colors cursor-pointer"
-                onclick={resetPresetConfig}
-              >
-                <RotateCcw size={11} />
-                <span>Reset</span>
-              </button>
+              <div class="flex gap-2.5">
+                <button 
+                  class="flex items-center gap-1 text-[11px] text-blue-600 dark:text-blue-400 font-medium hover:text-blue-500 transition-colors cursor-pointer"
+                  onclick={triggerSavePreset}
+                >
+                  <svg viewBox="0 0 24 24" width="11" height="11" stroke="currentColor" stroke-width="2" fill="none"><path d="M19 21H5a2 2 0 0 1-2-2V5a2 2 0 0 1 2-2h11l5 5v11a2 2 0 0 1-2 2z"></path><polyline points="17 21 17 13 7 13 7 21"></polyline><polyline points="7 3 7 8 15 8"></polyline></svg>
+                  <span>Save Design</span>
+                </button>
+                <button 
+                  class="flex items-center gap-1 text-[11px] text-neutral-800 dark:text-neutral-400 hover:text-blue-500 transition-colors cursor-pointer"
+                  onclick={resetPresetConfig}
+                >
+                  <RotateCcw size={11} />
+                  <span>Reset</span>
+                </button>
+              </div>
             </div>
 
             <div class="space-y-3.5 max-h-[35vh] overflow-y-auto pr-1">
@@ -712,9 +844,23 @@
         <!-- CODE EXPORT -->
         {:else if islandMode === 'export'}
           <div class="space-y-4">
-            <h2 class="text-xs font-semibold tracking-wider text-neutral-800 dark:text-neutral-300 uppercase font-mono">
-              Get Svelte Code
-            </h2>
+            <div class="flex justify-between items-center">
+              <h2 class="text-xs font-semibold tracking-wider text-neutral-800 dark:text-neutral-300 uppercase font-mono">
+                Get Svelte Code
+              </h2>
+              <button 
+                class="px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-500 text-white font-medium text-[10px] transition-all cursor-pointer flex items-center gap-1 shadow-sm"
+                onclick={copyShareLink}
+              >
+                {#if shareCopyState === 'copied'}
+                  <Check size={10} />
+                  <span>Link Copied!</span>
+                {:else}
+                  <svg viewBox="0 0 24 24" width="10" height="10" stroke="currentColor" stroke-width="2.1" fill="none"><path d="M10 13a5 5 0 0 0 7.54.54l3-3a5 5 0 0 0-7.07-7.07l-1.72 1.71"></path><path d="M14 11a5 5 0 0 0-7.54-.54l-3 3a5 5 0 0 0 7.07 7.07l1.71-1.71"></path></svg>
+                  <span>Copy Shareable Link</span>
+                {/if}
+              </button>
+            </div>
             
             <div class="flex p-1 rounded-lg bg-neutral-900/10 dark:bg-white/5 border border-white/10">
               <button 
@@ -777,6 +923,24 @@
                   <option value="workers-ai">Cloudflare Workers AI (Serverless Edge)</option>
                 </select>
               </div>
+
+              {#if aiProvider === 'workers-ai'}
+                <div class="flex flex-col gap-1">
+                  <span class="font-medium text-neutral-800 dark:text-neutral-300">Workers AI Model</span>
+                  <select 
+                    bind:value={cfModel}
+                    class="px-2.5 py-1.5 bg-neutral-900/5 dark:bg-white/5 border border-white/10 rounded-lg text-neutral-900 dark:text-neutral-100 cursor-pointer"
+                  >
+                    <option value="@cf/google/gemma-4-26b-a4b-it">Google Gemma 4 26B (Default - Intelligent & Fast)</option>
+                    <option value="@cf/deepseek-ai/deepseek-r1-distill-qwen-32b">DeepSeek R1 (Qwen 32B Distill - Reasoning)</option>
+                    <option value="@cf/meta/llama-3.3-70b-instruct-fp8-fast">Meta Llama 3.3 70B (High Capacity)</option>
+                    <option value="@cf/meta/llama-3.1-8b-instruct-fp8">Meta Llama 3.1 8B (Fast / Low Latency)</option>
+                  </select>
+                  <span class="text-[10px] text-neutral-500">
+                    Runs at the serverless edge via Cloudflare. Gemma 4 26B is recommended.
+                  </span>
+                </div>
+              {/if}
 
               {#if aiProvider === 'gemini'}
                 <div class="flex flex-col gap-1">
@@ -1000,6 +1164,48 @@
       </div>
     </div>
   </div>
+
+  <!-- Save Preset Modal -->
+  {#if showSaveModal}
+    <div class="fixed inset-0 z-50 flex items-center justify-center bg-black/60 backdrop-blur-sm transition-all pointer-events-auto">
+      <div class="w-full max-w-sm p-6 rounded-2xl border border-white/10 dark:border-white/5 bg-white dark:bg-neutral-900 shadow-2xl mx-4 animate-scale-in">
+        <h3 class="text-base font-semibold text-neutral-950 dark:text-white mb-2">
+          Save Custom Design
+        </h3>
+        <p class="text-xs text-neutral-500 leading-normal mb-4">
+          Save your current background settings to your browser's local storage under a custom name.
+        </p>
+        
+        <div class="space-y-3.5 mb-5">
+          <div class="flex flex-col gap-1 text-xs">
+            <span class="font-medium text-neutral-800 dark:text-neutral-300">Design Name</span>
+            <input 
+              type="text" 
+              placeholder="e.g. My Hot Nebula"
+              bind:value={savePresetName}
+              class="w-full px-3 py-2 text-xs bg-neutral-900/5 dark:bg-white/5 border border-white/10 rounded-lg text-neutral-900 dark:text-neutral-100 select-text cursor-text focus:outline-none focus:ring-1 focus:ring-blue-500"
+              onkeydown={(e) => { if (e.key === 'Enter') handleSavePreset() }}
+            />
+          </div>
+        </div>
+
+        <div class="flex gap-2.5 justify-end">
+          <button 
+            class="px-4 py-2 rounded-lg bg-neutral-900/5 hover:bg-neutral-900/10 dark:bg-white/5 dark:hover:bg-white/10 text-neutral-950 dark:text-white font-medium text-xs transition-all cursor-pointer"
+            onclick={() => showSaveModal = false}
+          >
+            Cancel
+          </button>
+          <button 
+            class="px-4 py-2 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition-all cursor-pointer shadow-md"
+            onclick={handleSavePreset}
+          >
+            Save Design
+          </button>
+        </div>
+      </div>
+    </div>
+  {/if}
 
 </div>
 

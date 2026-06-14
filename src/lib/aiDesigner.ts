@@ -232,9 +232,8 @@ function cleanAndParseJSON(text: string): any {
       parsedJson = JSON.parse(jsonText);
     } catch (e: any) {
       parseError = e;
-      // If parsing failed, maybe it's because of unescaped newlines/control characters inside the JSON string values.
+      // If parsing failed, maybe it's because of unescaped newlines/control characters or trailing commas.
       // Let's try to repair the JSON string:
-      // Replace raw newlines in string values with escaped newlines (\n).
       try {
         let insideString = false;
         let escaped = false;
@@ -259,6 +258,15 @@ function cleanAndParseJSON(text: string): any {
                 repaired += char;
               }
             } else {
+              if (char === '}' || char === ']') {
+                let lastNonWhitespaceIdx = repaired.length - 1;
+                while (lastNonWhitespaceIdx >= 0 && /\s/.test(repaired[lastNonWhitespaceIdx])) {
+                  lastNonWhitespaceIdx--;
+                }
+                if (lastNonWhitespaceIdx >= 0 && repaired[lastNonWhitespaceIdx] === ',') {
+                  repaired = repaired.slice(0, lastNonWhitespaceIdx) + repaired.slice(lastNonWhitespaceIdx + 1);
+                }
+              }
               repaired += char;
             }
             escaped = false;

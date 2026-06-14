@@ -264,21 +264,69 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
       response_format: { type: 'json_object' }
     })
 
-    const result = response.response
-    let parsed: any
+    // Robustly extract the content from the Workers AI response
+    let rawContent: any = undefined;
+    if (response) {
+      if (typeof response === 'string') {
+        rawContent = response;
+      } else if (typeof response === 'object') {
+        // 1. Check if the response itself is the parsed JSON object
+        if (response.presetId) {
+          rawContent = response;
+        }
+        // 2. Check if the response has a result property that is the parsed JSON object
+        else if (response.result && typeof response.result === 'object' && response.result.presetId) {
+          rawContent = response.result;
+        }
+        // 3. Check if response.response is the parsed JSON object
+        else if (response.response && typeof response.response === 'object' && response.response.presetId) {
+          rawContent = response.response;
+        }
+        // 4. Check response.response as a string
+        else if (typeof response.response === 'string') {
+          rawContent = response.response;
+        }
+        // 5. Check response.result as a string
+        else if (typeof response.result === 'string') {
+          rawContent = response.result;
+        }
+        // 6. Check nested response.result.response
+        else if (response.result && typeof response.result.response === 'string') {
+          rawContent = response.result.response;
+        }
+        // 7. Check OpenAI compatible choices
+        else if (response.choices && response.choices[0] && response.choices[0].message) {
+          const msg = response.choices[0].message;
+          if (msg.content && typeof msg.content === 'object' && msg.content.presetId) {
+            rawContent = msg.content;
+          } else if (typeof msg.content === 'string') {
+            rawContent = msg.content;
+          }
+        }
+        // 8. Fallback: stringify the response and let the parser extract JSON
+        else {
+          rawContent = JSON.stringify(response);
+        }
+      }
+    }
 
-    if (typeof result === 'object' && result !== null) {
-      parsed = result
-    } else if (typeof result === 'string') {
+    if (rawContent === undefined) {
+      throw new Error('Unsupported response format from AI model: Response is empty or undefined');
+    }
+
+    let parsed: any = null;
+    if (typeof rawContent === 'object' && rawContent !== null) {
+      parsed = rawContent;
+    } else if (typeof rawContent === 'string') {
       let jsonText = '';
-      const jsonBlockMatch = result.match(/```json\s*([\s\S]*?)\s*```/);
+      const jsonBlockMatch = rawContent.match(/```json\s*([\s\S]*?)\s*```/);
       if (jsonBlockMatch && jsonBlockMatch[1]) {
         jsonText = jsonBlockMatch[1].trim();
       } else {
-        const startIdx = result.indexOf('{');
-        const endIdx = result.lastIndexOf('}');
+        const startIdx = rawContent.indexOf('{');
+        const endIdx = rawContent.lastIndexOf('}');
         if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
-          jsonText = result.substring(startIdx, endIdx + 1).trim();
+          jsonText = rawContent.substring(startIdx, endIdx + 1).trim();
         }
       }
 
@@ -288,7 +336,7 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
           parsed = JSON.parse(jsonText);
         } catch (e: any) {
           parseError = e;
-          // Try to repair raw newlines in string fields
+          // Try to repair raw newlines in string fields and strip trailing commas
           try {
             let insideString = false;
             let escaped = false;
@@ -313,6 +361,15 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
                     repaired += char;
                   }
                 } else {
+                  if (char === '}' || char === ']') {
+                    let lastNonWhitespaceIdx = repaired.length - 1;
+                    while (lastNonWhitespaceIdx >= 0 && /\s/.test(repaired[lastNonWhitespaceIdx])) {
+                      lastNonWhitespaceIdx--;
+                    }
+                    if (lastNonWhitespaceIdx >= 0 && repaired[lastNonWhitespaceIdx] === ',') {
+                      repaired = repaired.slice(0, lastNonWhitespaceIdx) + repaired.slice(lastNonWhitespaceIdx + 1);
+                    }
+                  }
                   repaired += char;
                 }
                 escaped = false;
@@ -328,11 +385,11 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
 
       // Reconstruct custom fallback if JSON parse failed but we have a svelte block
       if (!parsed || !parsed.presetId) {
-        const svelteBlockMatch = result.match(/```svelte\s*([\s\S]*?)\s*```/);
+        const svelteBlockMatch = rawContent.match(/```svelte\s*([\s\S]*?)\s*```/);
         if (svelteBlockMatch && svelteBlockMatch[1]) {
           parsed = {
             presetId: 'custom',
-            explanation: result,
+            explanation: rawContent,
             config: {}
           };
         } else if (parseError) {
@@ -342,7 +399,7 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
         }
       }
     } else {
-      throw new Error('Unsupported response format from AI model: ' + typeof result)
+      throw new Error('Unsupported response format from AI model: ' + typeof rawContent);
     }
 
     if (!parsed || !parsed.presetId) {

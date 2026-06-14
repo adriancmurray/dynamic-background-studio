@@ -41,7 +41,6 @@
   import Fireflies from './lib/components/Fireflies.svelte'
   import Synthwave from './lib/components/Synthwave.svelte'
   import Voronoi from './lib/components/Voronoi.svelte'
-  import CustomGenerated from './lib/components/CustomGenerated.svelte'
 
   // Import data definitions
   import { presetCatalog, type BackgroundPreset } from './lib/presetCatalog'
@@ -67,34 +66,17 @@
 
   let showOverlay = $state(false)
   let theme = $state<'dark' | 'light'>('dark')
-  let customSvelteCode = $state('')
-  let commandCenterHeight = $state(0)
   
   // Command Center Morph State
   let islandMode = $state<'collapsed' | 'presets' | 'variables' | 'export' | 'settings' | 'profile'>('collapsed')
   
-  let showCodePanel = $state(false);
-
   // Exporter panel sub-states
   let activeExportType = $state<'svelte-use' | 'svelte-source'>('svelte-use')
   let copyState = $state<'idle' | 'copied'>('idle')
-
-  let showToast = $state(false);
-  let toastMessage = $state('');
-  let toastType = $state<'success' | 'error' | 'info'>('info');
-  let toastTimeout: ReturnType<typeof setTimeout>;
-
-  function showToastMessage(message: string, type: 'success' | 'error' | 'info' = 'info') {
-    toastMessage = message;
-    toastType = type;
-    showToast = true;
-    clearTimeout(toastTimeout);
-    toastTimeout = setTimeout(() => {
-      showToast = false;
-    }, 3000);
-  }
   let copyTimeout = 0
 
+  // Viewport mode: desktop (full screen), mobile simulator
+  let viewportMode = $state<'desktop' | 'mobile'>('desktop')
 
   // --- URL State Synchronization ---
   let blockHashSync = false
@@ -299,16 +281,6 @@
       fetchUserRepos()
     }
     loadGallery()
-
-    // Fetch custom Svelte code if present on server
-    fetch('/__save-custom')
-      .then(res => res.json())
-      .then(data => {
-        if (data.code) {
-          customSvelteCode = data.code
-        }
-      })
-      .catch(err => console.error('Failed to load custom Svelte code on mount:', err))
   })
 
   // Hash updates automatically on config mutations
@@ -442,39 +414,8 @@ How can I help you design today?`,
         geminiModel
       }
       
-      let activeCustomCode = customSvelteCode
-      if (activePresetId === 'custom') {
-        try {
-          const res = await fetch('/__save-custom')
-          const data = await res.json()
-          if (data.code) {
-            activeCustomCode = data.code
-            customSvelteCode = data.code
-          }
-        } catch (e) {
-          console.error('Failed to fetch latest custom code before sending message:', e)
-        }
-      }
+      const response = await askAIDesigner(chatMessages, config, activePresetId, configs[activePresetId], communityPresets)
       
-      const response = await askAIDesigner(chatMessages, config, activePresetId, configs[activePresetId], communityPresets, activeCustomCode)
-      
-      if (response.presetId === 'custom') {
-        const match = response.explanation.match(/```svelte\s*([\s\S]*?)\s*```/)
-        if (match && match[1]) {
-          const svelteCode = match[1]
-          try {
-            await fetch('/__save-custom', {
-              method: 'POST',
-              body: JSON.stringify({ code: svelteCode })
-            })
-            customSvelteCode = svelteCode
-            showToastMessage('Custom background generated and applied!', 'success')
-          } catch (e) {
-            console.error('Failed to save custom component:', e)
-          }
-        }
-      }
-
       const assistantMsg: ChatMessage = {
         id: crypto.randomUUID(),
         role: 'assistant',
@@ -647,8 +588,6 @@ How can I help you design today?`,
         <Synthwave {...activeConfig} />
       {:else if activePresetId === 'voronoi'}
         <Voronoi {...activeConfig} />
-      {:else if activePresetId === 'custom'}
-        <CustomGenerated {...activeConfig} theme={theme} />
       {/if}
 
       <!-- Interactive Instructions Sheet Overlay -->
@@ -729,13 +668,13 @@ How can I help you design today?`,
 
   <!-- TOP RIGHT ACTION BAR -->
   <div class="fixed top-4 right-4 z-20 flex gap-2 pointer-events-auto">
-    <!-- Code Panel Toggle -->
+    <!-- Help Guide Toggle -->
     <button 
-      class="p-2.5 rounded-full bg-white/20 dark:bg-black/35 backdrop-blur-md border border-white/10 dark:border-white/5 text-neutral-800 dark:text-neutral-200 hover:bg-white/30 dark:hover:bg-black/50 transition-all cursor-pointer flex items-center justify-center shadow-lg {showCodePanel ? 'bg-blue-600/20 text-blue-500 border-blue-500/30' : ''}"
-      onclick={() => showCodePanel = !showCodePanel}
-      title={showCodePanel ? "Hide Code" : "Show Code"}
+      class="p-2.5 rounded-full bg-white/20 dark:bg-black/35 backdrop-blur-md border border-white/10 dark:border-white/5 text-neutral-800 dark:text-neutral-200 hover:bg-white/30 dark:hover:bg-black/50 transition-all cursor-pointer flex items-center justify-center shadow-lg"
+      onclick={() => showOverlay = !showOverlay}
+      title={showOverlay ? "Hide Guide" : "Show Guide & Instructions"}
     >
-      <Code size={14} />
+      <CircleQuestionMark size={14} />
     </button>
 
     <!-- Theme Toggle -->
@@ -777,8 +716,7 @@ How can I help you design today?`,
   {#if showChat}
     <div 
       bind:this={chatFeedContainer}
-      class="fixed left-1/2 -translate-x-1/2 z-20 w-[92%] max-w-2xl overflow-y-auto scrollbar-none pointer-events-auto flex flex-col gap-4 p-4 select-text transition-all duration-300"
-      style="bottom: {commandCenterHeight + 20}px; max-height: calc(100vh - {commandCenterHeight + 32}px);"
+      class="fixed bottom-[136px] left-1/2 -translate-x-1/2 z-20 w-[92%] max-w-2xl max-h-[55vh] overflow-y-auto scrollbar-none pointer-events-none flex flex-col gap-4 p-4 select-text transition-all duration-300"
       transition:fly={{ y: 20, duration: 250 }}
     >
       {#if chatMessages.length === 0}
@@ -835,14 +773,12 @@ How can I help you design today?`,
                       : 'bg-white/85 dark:bg-neutral-900/60 backdrop-blur-xl border border-neutral-200/50 dark:border-white/10 text-neutral-900 dark:text-neutral-100 rounded-tl-none shadow-md shadow-black/5 hover:bg-white/90 dark:hover:bg-neutral-900/65'}"
               >
                 {#if msg.isError}
-                  <div class="flex items-start gap-1.5 markdown-content">
+                  <div class="flex items-start gap-1.5">
                     <span class="mt-0.5">⚠️</span>
                     <span>{msg.content}</span>
                   </div>
                 {:else}
-                  <div class="markdown-content">
-                    {@html parseMarkdown(msg.content)}
-                  </div>
+                  {@html parseMarkdown(msg.content)}
                 {/if}
               </div>
             {/if}
@@ -891,7 +827,6 @@ How can I help you design today?`,
 
   <!-- FLOATING MORPHING COMMAND CENTER -->
   <div 
-    bind:clientHeight={commandCenterHeight}
     class="fixed bottom-6 left-1/2 -translate-x-1/2 z-30 w-[92%] max-w-2xl bg-white/70 dark:bg-black/35 backdrop-blur-2xl border border-white/15 dark:border-white/5 rounded-3xl shadow-2xl pointer-events-auto flex flex-col overflow-hidden transition-[transform,background-color,border-color,box-shadow] duration-500 ease-out"
     style="transition-timing-function: cubic-bezier(0.34, 1.56, 0.64, 1);"
   >
@@ -1514,14 +1449,14 @@ How can I help you design today?`,
       <!-- Top Row: Input Field -->
       <form 
         onsubmit={handleAiSubmit}
-        class="flex items-end gap-2.5"
+        class="flex items-center gap-2.5"
       >
-        <div class="flex items-center justify-center pl-0.5 pb-1.5">
+        <div class="flex items-center justify-center pl-0.5">
           {#if githubAvatarUrl}
             <button 
               type="button"
               onclick={() => toggleMode('profile')}
-              class="w-8 h-8 rounded-full overflow-hidden border border-white/10 shadow-sm transition-transform hover:scale-105 active:scale-95 flex-shrink-0 relative group"
+              class="w-7 h-7 rounded-full overflow-hidden border border-white/10 shadow-sm transition-transform hover:scale-105 active:scale-95 flex-shrink-0 relative group"
               title="Profile Settings"
             >
               <img src={githubAvatarUrl} alt="Avatar" class="w-full h-full object-cover group-hover:opacity-80 transition-opacity" />
@@ -1535,58 +1470,43 @@ How can I help you design today?`,
               {/if}
             </button>
           {:else}
-            <div class="text-blue-500 flex items-center justify-center w-8 h-8">
+            <div class="text-blue-500 flex items-center justify-center w-7 h-7">
               {#if aiLoading}
-                <svg class="animate-spin h-5 w-5 text-blue-500" fill="none" viewBox="0 0 24 24">
+                <svg class="animate-spin h-4 w-4 text-blue-500" fill="none" viewBox="0 0 24 24">
                   <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
                   <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
                 </svg>
               {:else}
-                <button type="button" onclick={() => toggleMode('profile')} class="w-8 h-8 rounded-full border border-neutral-200/50 dark:border-white/10 hover:bg-neutral-900/5 dark:hover:bg-white/10 hover:scale-105 active:scale-95 transition-all cursor-pointer flex items-center justify-center shadow-sm" title="Profile Settings">
-                  <MessageSquare size={14} class="text-neutral-500 dark:text-neutral-400" />
-                </button>
+                <MessageSquare size={15} class="text-neutral-500 dark:text-neutral-400" />
               {/if}
             </div>
           {/if}
         </div>
         
-        <div class="relative flex-1 flex items-center bg-neutral-100 dark:bg-black/20 border border-neutral-200/50 dark:border-white/5 rounded-2xl shadow-inner transition-colors focus-within:border-blue-500/30 dark:focus-within:border-blue-500/30">
-          <textarea 
-            name="chatPrompt"
-            placeholder={aiLoading ? "Gemma 4 is designing..." : "Ask AI to customize or design..."}
-            bind:value={aiPrompt}
-            disabled={aiLoading}
-            rows="1"
-            class="w-full bg-transparent text-sm text-neutral-900 dark:text-white placeholder-neutral-500 focus:outline-none focus:ring-0 select-text cursor-text disabled:opacity-50 resize-none max-h-32 overflow-y-auto py-3 pl-3 pr-10 rounded-2xl"
-            onclick={() => { 
-              if (islandMode === 'profile') islandMode = 'collapsed';
-              showChat = true; // Auto-open chat feed when starting to type
-            }}
-            onkeydown={(e) => {
-              if (e.key === 'Enter' && !e.shiftKey) {
-                e.preventDefault();
-                const form = e.currentTarget.closest('form');
-                if (form) form.requestSubmit();
-              }
-            }}
-            oninput={(e) => {
-              const target = e.target as HTMLTextAreaElement;
-              target.style.height = 'auto';
-              target.style.height = Math.min(target.scrollHeight, 128) + 'px';
-            }}
-          ></textarea>
-          
-          <div class="absolute right-1.5 bottom-1.5">
-            <button 
-              type="submit" 
-              disabled={aiLoading || !aiPrompt.trim()}
-              class="p-1.5 rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition-all disabled:opacity-50 disabled:bg-neutral-400 dark:disabled:bg-neutral-700 flex items-center justify-center cursor-pointer shadow-sm"
-              title="Send design request"
-            >
-              <Send size={14} />
-            </button>
-          </div>
-        </div>
+        <textarea 
+          name="chatPrompt"
+          placeholder={aiLoading ? "Gemma 4 is designing..." : "Ask AI to customize or design..."}
+          bind:value={aiPrompt}
+          disabled={aiLoading}
+          rows="1"
+          class="w-full bg-transparent text-sm text-neutral-900 dark:text-white placeholder-neutral-500 focus:outline-none focus:ring-0 select-text cursor-text disabled:opacity-50 resize-none max-h-32 overflow-y-auto py-0.5"
+          onclick={() => { 
+            if (islandMode === 'profile') islandMode = 'collapsed';
+            showChat = true; // Auto-open chat feed when starting to type
+          }}
+          onkeydown={(e) => {
+            if (e.key === 'Enter' && !e.shiftKey) {
+              e.preventDefault();
+              const form = e.currentTarget.closest('form');
+              if (form) form.requestSubmit();
+            }
+          }}
+          oninput={(e) => {
+            const target = e.target as HTMLTextAreaElement;
+            target.style.height = 'auto';
+            target.style.height = target.scrollHeight + 'px';
+          }}
+        ></textarea>
       </form>
 
       <!-- Bottom Row: Controls & Quick Actions -->
@@ -1642,7 +1562,16 @@ How can I help you design today?`,
             <Sliders size={14} />
           </button>
 
-
+          <!-- Code Exporter Toggle -->
+          <button 
+            type="button"
+            class="p-2 rounded-full transition-all hover:scale-105 active:scale-90 cursor-pointer flex items-center justify-center 
+              {islandMode === 'export' ? 'bg-blue-600 text-white shadow-md' : 'text-neutral-800 dark:text-neutral-300 hover:bg-neutral-950/5 dark:hover:bg-white/10'}"
+            onclick={() => toggleMode('export')}
+            title="Code Exporter"
+          >
+            <Code size={14} />
+          </button>
 
           <!-- AI Configuration Toggle -->
           <button 
@@ -1715,7 +1644,21 @@ How can I help you design today?`,
             </div>
           </div>
 
-
+          <!-- Submit Button -->
+          <button 
+            type="button" 
+            disabled={aiLoading || !aiPrompt.trim()}
+            onclick={() => {
+              if (aiPrompt.trim()) {
+                sendChatMessage(aiPrompt)
+                aiPrompt = ''
+              }
+            }}
+            class="p-2 rounded-xl bg-blue-600 hover:bg-blue-500 text-white transition-all disabled:opacity-50 flex items-center justify-center cursor-pointer shadow-md"
+            title="Send design request"
+          >
+            <Send size={13} />
+          </button>
         </div>
 
       </div>

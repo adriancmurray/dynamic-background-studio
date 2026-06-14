@@ -297,4 +297,12 @@ export const presetCatalog: BackgroundPreset[] = [
       { key: 'interactive', label: 'Hover Interactive', type: 'toggle' },
     ],
   },
+  {
+    id: 'custom',
+    componentName: 'CustomGenerated',
+    name: 'Custom AI Generated',
+    description: 'A completely custom background generated on-the-fly by the AI Designer.',
+    defaultConfig: {},
+    controls: [],
+  },
 ]

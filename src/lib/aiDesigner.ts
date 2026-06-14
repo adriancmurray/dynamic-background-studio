@@ -23,14 +23,75 @@ CONVERSATIONAL FLOW:
 
 You must output a JSON object matching this structure:
 {
-  "presetId": "dotfield" | "constellation" | "flowfield" | "aurora" | "jellyfish" | "matrix" | "nebula" | "hexgrid" | "fireflies" | "synthwave" | "voronoi",
-  "explanation": "A short (1-sentence) explanation of your design choices.",
+  "presetId": "dotfield" | "constellation" | "flowfield" | "aurora" | "jellyfish" | "matrix" | "nebula" | "hexgrid" | "fireflies" | "synthwave" | "voronoi" | "custom",
+  "explanation": "A short explanation of your design choices. If creating or modifying a custom background, YOU MUST output the full Svelte 5 component code inside a \`\`\`svelte markdown block here.",
   "config": {
-    // Only variables that belong to the chosen preset!
+    // Variables that belong to the chosen preset. You are highly encouraged to add new variables or parameters if it better fits the user's request. Our components accept all additional props.
   }
 }
 
-Here are the available presets and their allowed variables (do not output variables from other presets):
+If the user explicitly asks to make a completely NEW background type (not just adjusting a preset) or to modify the active custom background, set presetId to "custom" and provide the COMPLETE Svelte 5 component code inside a \`\`\`svelte ... \`\`\` markdown block within the "explanation" field.
+
+When making or modifying a custom component, you MUST support BOTH light and dark mode:
+1. Accept a \`theme\` prop (\`theme?: 'light' | 'dark'\`) in your Props interface, defaulting to 'dark'.
+2. Use Svelte's reactive states or derived properties to adjust colors, drawing operations, or backgrounds based on the \`theme\` value.
+3. For canvas backgrounds, clear/fill the canvas background with a color matching the theme (e.g., \`#121212\` for dark theme, and \`#faf9f6\` or \`#ffffff\` for light theme), or read CSS custom properties.
+4. Adjust drawing composition/opacity for the theme (e.g. use 'screen' or 'lighter' blend modes in dark mode, and 'multiply' or 'source-over' in light mode for bleeding paint/watercolor/particle effects).
+
+Ensure the component uses standard HTML5 Canvas 2D or SVG inside a <script lang="ts"> block with Svelte 5 runes ($props, $effect), handling resizing, unmounts, and drawing properly.
+
+Here is a reference format for a custom Svelte 5 Canvas background supporting both modes:
+\`\`\`svelte
+<script lang="ts">
+  interface Props {
+    color?: string;
+    theme?: 'light' | 'dark';
+  }
+  let { color = '#3b82f6', theme = 'dark' }: Props = $props();
+
+  let canvas: HTMLCanvasElement;
+  let context: CanvasRenderingContext2D;
+  let animationFrame = 0;
+
+  // React to theme changes
+  let bgColor = $derived(theme === 'dark' ? '#121212' : '#faf9f6');
+  let blendMode = $derived(theme === 'dark' ? 'screen' : 'multiply');
+
+  $effect(() => {
+    if (!canvas) return;
+    context = canvas.getContext('2d')!;
+    
+    const handleResize = () => {
+      canvas.width = window.innerWidth;
+      canvas.height = window.innerHeight;
+    };
+    window.addEventListener('resize', handleResize);
+    handleResize();
+
+    const render = () => {
+      // Clear/draw background matching theme
+      context.fillStyle = bgColor;
+      context.fillRect(0, 0, canvas.width, canvas.height);
+
+      context.save();
+      context.globalCompositeOperation = blendMode;
+      context.fillStyle = color;
+      context.fillRect(canvas.width / 2 - 50, canvas.height / 2 - 50, 100, 100);
+      context.restore();
+
+      animationFrame = requestAnimationFrame(render);
+    };
+    render();
+
+    return () => {
+      window.removeEventListener('resize', handleResize);
+      cancelAnimationFrame(animationFrame);
+    };
+  });
+</script>
+<canvas bind:this={canvas} class="w-full h-full block absolute top-0 left-0" style="pointer-events: none;"></canvas>
+\`\`\`
+Here are the available presets and their default variables (feel free to add new ones outside this list or invent new properties):
 
 1. "dotfield": (Reacting dot grid)
    - spacing: number (15 to 60)
@@ -134,7 +195,7 @@ Here are the available presets and their allowed variables (do not output variab
     - bgGradient2: hex string
     - interactive: boolean
 
-Be creative! Select the preset that best fits the request. Output ONLY valid JSON inside markdown block \`\`\`json.`;
+Be creative! Select the preset that best fits the request. Output ONLY a raw, valid JSON object matching the schema. Do not wrap the JSON object in markdown backticks or any other formatting.`;
 
 export interface ChatMessage {
   id: string
@@ -148,12 +209,105 @@ export interface ChatMessage {
 
 import type { CommunityPreset } from './galleryFetcher'
 
+function cleanAndParseJSON(text: string): any {
+  // 1. Try to find a JSON block in markdown: ```json ... ```
+  let jsonText = '';
+  const jsonBlockMatch = text.match(/```json\s*([\s\S]*?)\s*```/);
+  if (jsonBlockMatch && jsonBlockMatch[1]) {
+    jsonText = jsonBlockMatch[1].trim();
+  } else {
+    // If no markdown JSON block, find the first '{' and last '}'
+    const startIdx = text.indexOf('{');
+    const endIdx = text.lastIndexOf('}');
+    if (startIdx !== -1 && endIdx !== -1 && endIdx > startIdx) {
+      jsonText = text.substring(startIdx, endIdx + 1).trim();
+    }
+  }
+
+  // 2. Try parsing the extracted JSON
+  let parsedJson: any = null;
+  let parseError: Error | null = null;
+  if (jsonText) {
+    try {
+      parsedJson = JSON.parse(jsonText);
+    } catch (e: any) {
+      parseError = e;
+      // If parsing failed, maybe it's because of unescaped newlines/control characters inside the JSON string values.
+      // Let's try to repair the JSON string:
+      // Replace raw newlines in string values with escaped newlines (\n).
+      try {
+        let insideString = false;
+        let escaped = false;
+        let repaired = '';
+        for (let i = 0; i < jsonText.length; i++) {
+          const char = jsonText[i];
+          if (char === '"' && !escaped) {
+            insideString = !insideString;
+            repaired += char;
+          } else if (char === '\\' && insideString && !escaped) {
+            escaped = true;
+            repaired += char;
+          } else {
+            if (insideString) {
+              if (char === '\n') {
+                repaired += '\\n';
+              } else if (char === '\r') {
+                repaired += '\\r';
+              } else if (char === '\t') {
+                repaired += '\\t';
+              } else {
+                repaired += char;
+              }
+            } else {
+              repaired += char;
+            }
+            escaped = false;
+          }
+        }
+        parsedJson = JSON.parse(repaired);
+        parseError = null; // Successfully repaired!
+      } catch (err2) {
+        // Keep the original parsing error
+      }
+    }
+  }
+
+  // 3. If we parsed successfully, check if presetId is present
+  if (parsedJson && parsedJson.presetId) {
+    if (!parsedJson.config) {
+      parsedJson.config = {};
+    }
+    if (parsedJson.explanation === undefined) {
+      parsedJson.explanation = '';
+    }
+    return parsedJson;
+  }
+
+  // 4. Fallback: If JSON parsing failed but there is a ```svelte code block in the response,
+  // we can reconstruct a "custom" preset response.
+  const svelteBlockMatch = text.match(/```svelte\s*([\s\S]*?)\s*```/);
+  if (svelteBlockMatch && svelteBlockMatch[1]) {
+    return {
+      presetId: 'custom',
+      explanation: text, // Contain the full text (including the svelte block) so the client can extract it
+      config: {}
+    };
+  }
+
+  if (parseError) {
+    throw new Error(`Unable to parse JSON string: ${parseError.message}`);
+  }
+
+  throw new Error('Unable to parse JSON string: No JSON object or Svelte component block found in response');
+}
+
 export async function askAIDesigner(
   messages: ChatMessage[],
   aiConfig: AIConfig,
   activePresetId: string,
   activeConfig: Record<string, any>,
-  galleryPresets?: CommunityPreset[]
+  galleryPresets?: CommunityPreset[],
+  customSvelteCode?: string
 ): Promise<AIResponse> {
   let galleryContext = ''
   if (galleryPresets && galleryPresets.length > 0) {
@@ -166,7 +320,10 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
 `
   }
 
-  const currentStateInstruction = ''
+  let currentStateInstruction = ''
+  if (activePresetId === 'custom' && customSvelteCode) {
+    currentStateInstruction = `\n\nCURRENT CUSTOM CODE:\nThe user's active background is a custom Svelte 5 component. Here is its current source code:\n\`\`\`svelte\n${customSvelteCode}\n\`\`\`\nUse this code as your base. Modify it according to the user's request and output the full updated Svelte 5 component in the "explanation" field within a \`\`\`svelte markdown block.`
+  }
 
   if (aiConfig.provider === 'gemini') {
     if (!aiConfig.apiKey) {
@@ -220,6 +377,25 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
             },
             generationConfig: {
               responseMimeType: 'application/json',
+              responseSchema: {
+                type: 'object',
+                properties: {
+                  presetId: {
+                    type: 'string',
+                    description: 'The ID of the preset chosen, or "custom" if a new custom Svelte component is being created or modified.'
+                  },
+                  explanation: {
+                    type: 'string',
+                    description: 'A brief explanation of design choices. If creating or modifying a custom Svelte component, output the full updated Svelte 5 component code inside a ```svelte markdown block here.'
+                  },
+                  config: {
+                    type: 'object',
+                    description: 'The config parameters for the chosen preset.'
+                  }
+                },
+                required: ['presetId', 'explanation', 'config']
+              },
+              maxOutputTokens: 8192,
             },
           }),
         })
@@ -233,11 +409,16 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
         const textResponse = data.candidates?.[0]?.content?.parts?.[0]?.text
         if (!textResponse) throw new Error('Empty response from model')
 
-        const parsed = JSON.parse(textResponse)
-        if (parsed.presetId && parsed.config) {
+        console.log('Gemini raw textResponse:', textResponse)
+        const parsed = cleanAndParseJSON(textResponse)
+        console.log('Gemini parsed object:', parsed)
+        if (parsed.presetId) {
+          if (!parsed.config) {
+            parsed.config = {}
+          }
           return parsed as AIResponse
         }
-        throw new Error('Response JSON is missing presetId or config')
+        throw new Error(`Response JSON is missing presetId. Keys returned: ${Object.keys(parsed || {}).join(', ')}`)
       } catch (err: any) {
         lastError = err.message || err.toString()
         // If it's a model-not-found error, try the next model
@@ -285,8 +466,11 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
     const content = data.message?.content
     if (!content) throw new Error('No content returned from Ollama')
 
-    const parsed = JSON.parse(content)
-    if (parsed.presetId && parsed.config) {
+    const parsed = cleanAndParseJSON(content)
+    if (parsed.presetId) {
+      if (!parsed.config) {
+        parsed.config = {}
+      }
       return parsed as AIResponse
     }
     throw new Error('Response JSON from Ollama is invalid')
@@ -310,7 +494,8 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
         galleryPresets,
         model: aiConfig.cfModel,
         activePresetId,
-        activeConfig
+        activeConfig,
+        customSvelteCode
       }),
     })
 

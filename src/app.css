@@ -83,3 +83,67 @@ body {
 ::-webkit-scrollbar-thumb:hover {
   background: rgba(120, 120, 120, 0.3);
 }
+
+/* Markdown styles for AI chat */
+.markdown-content p {
+  margin-bottom: 0.5em;
+}
+.markdown-content p:last-child {
+  margin-bottom: 0;
+}
+.markdown-content pre {
+  background: rgba(0, 0, 0, 0.1);
+  padding: 0.75em;
+  border-radius: 0.5rem;
+  overflow-x: auto;
+  overflow-y: auto;
+  max-height: 280px;
+  margin-top: 0.5em;
+  margin-bottom: 0.5em;
+  scrollbar-width: thin;
+}
+.markdown-content pre::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+.markdown-content pre::-webkit-scrollbar-track {
+  background: transparent;
+}
+.markdown-content pre::-webkit-scrollbar-thumb {
+  background: rgba(0, 0, 0, 0.15);
+  border-radius: 3px;
+}
+:root[data-theme="dark"] .markdown-content pre {
+  background: rgba(0, 0, 0, 0.3);
+}
+:root[data-theme="dark"] .markdown-content pre::-webkit-scrollbar-thumb {
+  background: rgba(255, 255, 255, 0.15);
+}
+.markdown-content code {
+  font-family: var(--font-mono);
+  background: rgba(0, 0, 0, 0.05);
+  padding: 0.1em 0.3em;
+  border-radius: 0.25rem;
+  font-size: 0.9em;
+}
+:root[data-theme="dark"] .markdown-content code {
+  background: rgba(255, 255, 255, 0.1);
+}
+.markdown-content pre code {
+  background: transparent;
+  padding: 0;
+}
+.markdown-content ul {
+  list-style-type: disc;
+  padding-left: 1.5em;
+  margin-bottom: 0.5em;
+}
+.markdown-content ol {
+  list-style-type: decimal;
+  padding-left: 1.5em;
+  margin-bottom: 0.5em;
+}
+.markdown-content a {
+  color: var(--accent-blue);
+  text-decoration: underline;
+}

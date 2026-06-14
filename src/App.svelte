@@ -108,20 +108,39 @@
   let aiLoading = $state(false)
   let aiError = $state('')
   
-  let aiProvider = $state<'gemini' | 'ollama' | 'workers-ai'>('gemini')
-  let aiApiKey = $state('')
-  let ollamaModel = $state('gemma4')
-  let ollamaUrl = $state('http://localhost:11434')
+  let aiProvider = $state<'gemini' | 'ollama' | 'workers-ai'>(
+    (typeof localStorage !== 'undefined' && localStorage.getItem('ai-provider') as any) || 'gemini'
+  )
+  let aiApiKey = $state(
+    (typeof localStorage !== 'undefined' && localStorage.getItem('ai-api-key')) || ''
+  )
+  let ollamaModel = $state(
+    (typeof localStorage !== 'undefined' && localStorage.getItem('ai-ollama-model')) || 'gemma4'
+  )
+  let ollamaUrl = $state(
+    (typeof localStorage !== 'undefined' && localStorage.getItem('ai-ollama-url')) || 'http://localhost:11434'
+  )
 
-  let githubUsername = $state('')
-  let githubAvatarUrl = $state('')
+  let githubUsername = $state(
+    (typeof localStorage !== 'undefined' && localStorage.getItem('studio-github-username')) || ''
+  )
+  let githubAvatarUrl = $derived(
+    githubUsername ? `https://github.com/${githubUsername}.png` : ''
+  )
 
   // Gallery Repository and State
-  let galleryRepo = $state('adriancmurray/dynamic-background-studio')
+  let galleryRepo = $state(
+    (typeof localStorage !== 'undefined' && localStorage.getItem('studio-gallery-repo')) || 'adriancmurray/dynamic-background-studio'
+  )
   let communityPresets = $state<CommunityPreset[]>([])
   let galleryLoading = $state(false)
   let galleryError = $state('')
   let presetsQuery = $state('')
+
+  let userRepos = $state<string[]>([])
+  let loadingRepos = $state(false)
+  let customRepoSelected = $state(false)
+  let showCustomRepoInput = $derived(customRepoSelected || !githubUsername || userRepos.length === 0 || !userRepos.includes(galleryRepo))
 
   // --- Derived Filters ---
   let filteredCorePresets = $derived(
@@ -158,6 +177,27 @@
     }
   }
 
+  async function fetchUserRepos() {
+    if (!githubUsername.trim()) {
+      userRepos = []
+      return
+    }
+    loadingRepos = true
+    try {
+      const res = await fetch(`https://api.github.com/users/${githubUsername.trim()}/repos?sort=updated&per_page=100`)
+      if (res.ok) {
+        const data = await res.json()
+        userRepos = data.map((r: any) => r.full_name)
+      } else {
+        userRepos = []
+      }
+    } catch {
+      userRepos = []
+    } finally {
+      loadingRepos = false
+    }
+  }
+
   onMount(() => {
     // Detect initial theme
     const savedTheme = localStorage.getItem('studio-theme')
@@ -177,27 +217,8 @@
       setTimeout(() => { blockHashSync = false }, 120)
     }
 
-    // Load AI settings
-    const savedProvider = localStorage.getItem('ai-provider') as any
-    if (savedProvider) aiProvider = savedProvider
-    const savedKey = localStorage.getItem('ai-api-key')
-    if (savedKey) aiApiKey = savedKey
-    const savedModel = localStorage.getItem('ai-ollama-model')
-    if (savedModel) ollamaModel = savedModel
-    const savedUrl = localStorage.getItem('ai-ollama-url')
-    if (savedUrl) ollamaUrl = savedUrl
-
-    // Load Profile Settings
-    const savedGithubUser = localStorage.getItem('studio-github-username')
-    if (savedGithubUser) {
-      githubUsername = savedGithubUser
-      githubAvatarUrl = `https://github.com/${savedGithubUser}.png`
-    }
-
-    // Load Gallery Repository
-    const savedGalleryRepo = localStorage.getItem('studio-gallery-repo')
-    if (savedGalleryRepo) {
-      galleryRepo = savedGalleryRepo
+    if (githubUsername) {
+      fetchUserRepos()
     }
     loadGallery()
   })
@@ -280,10 +301,10 @@
   function updateGithubAvatar() {
     const username = githubUsername.trim()
     if (username) {
-      githubAvatarUrl = `https://github.com/${username}.png`
       localStorage.setItem('studio-github-username', username)
+      fetchUserRepos()
     } else {
-      githubAvatarUrl = ''
+      userRepos = []
       localStorage.removeItem('studio-github-username')
     }
     islandMode = 'collapsed'
@@ -802,20 +823,60 @@
               <!-- GitHub Gallery Repository Configuration -->
               <div class="flex flex-col gap-1.5 border-t border-white/10 dark:border-white/5 pt-3.5 mt-1.5">
                 <span class="font-medium text-neutral-800 dark:text-neutral-300">GitHub Gallery Repository</span>
-                <div class="flex gap-2">
-                  <input 
-                    type="text" 
-                    placeholder="owner/repo (e.g. adrian/studio)"
-                    bind:value={galleryRepo}
-                    class="flex-1 px-2.5 py-1.5 bg-neutral-900/5 dark:bg-white/5 border border-white/10 rounded-lg text-neutral-900 dark:text-neutral-100 select-text cursor-text"
-                  />
-                  <button 
-                    class="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition-all active:scale-95 cursor-pointer shadow-md"
-                    onclick={loadGallery}
-                  >
-                    Load
-                  </button>
-                </div>
+                
+                {#if githubUsername}
+                  {#if loadingRepos}
+                    <div class="flex items-center gap-2 py-1.5 text-xs text-neutral-500 font-mono">
+                      <svg class="animate-spin h-3.5 w-3.5 text-blue-500" fill="none" viewBox="0 0 24 24">
+                        <circle class="opacity-25" cx="12" cy="12" r="10" stroke="currentColor" stroke-width="4"></circle>
+                        <path class="opacity-75" fill="currentColor" d="M4 12a8 8 0 018-8V0C5.373 0 0 5.373 0 12h4zm2 5.291A7.962 7.962 0 014 12H0c0 3.042 1.135 5.824 3 7.938l3-2.647z"></path>
+                      </svg>
+                      <span>Fetching your repositories...</span>
+                    </div>
+                  {:else if userRepos.length > 0}
+                    <select 
+                      value={customRepoSelected ? 'custom' : (userRepos.includes(galleryRepo) ? galleryRepo : 'custom')}
+                      onchange={(e) => {
+                        const val = e.currentTarget.value
+                        if (val === 'custom') {
+                          customRepoSelected = true
+                        } else {
+                          customRepoSelected = false
+                          galleryRepo = val
+                          loadGallery()
+                        }
+                      }}
+                      class="w-full px-2.5 py-1.5 bg-neutral-900/5 dark:bg-white/5 border border-white/10 rounded-lg text-neutral-900 dark:text-neutral-100 cursor-pointer text-xs"
+                    >
+                      <option value={galleryRepo}>{galleryRepo} (Selected)</option>
+                      {#each userRepos.filter(r => r !== galleryRepo) as repo}
+                        <option value={repo}>{repo}</option>
+                      {/each}
+                      <option value="custom">✍️ Enter Custom Repository...</option>
+                    </select>
+                  {/if}
+                {/if}
+
+                {#if showCustomRepoInput}
+                  <div class="flex gap-2">
+                    <input 
+                      type="text" 
+                      placeholder="owner/repo (e.g. adrian/studio)"
+                      bind:value={galleryRepo}
+                      class="flex-1 px-2.5 py-1.5 bg-neutral-900/5 dark:bg-white/5 border border-white/10 rounded-lg text-neutral-900 dark:text-neutral-100 select-text cursor-text text-xs"
+                    />
+                    <button 
+                      class="px-3 py-1.5 rounded-lg bg-blue-600 hover:bg-blue-500 text-white font-medium text-xs transition-all active:scale-95 cursor-pointer shadow-md"
+                      onclick={() => {
+                        customRepoSelected = false
+                        loadGallery()
+                      }}
+                    >
+                      Load
+                    </button>
+                  </div>
+                {/if}
+                
                 <span class="text-[10px] text-neutral-500">
                   Loads user submissions from this repository's issues database.
                 </span>

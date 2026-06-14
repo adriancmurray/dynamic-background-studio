@@ -148,8 +148,8 @@ ${galleryPresets.map((p, idx) => `${idx + 1}. ID: "${p.id}", Name: "${p.name}", 
 `
     }
 
-    // Call Llama 3.1 8B in Workers AI
-    const model = '@cf/meta/llama-3.1-8b-instruct-fast' // Reliable instruction-following model on Workers AI
+    // Call Llama 3.3 70B in Workers AI
+    const model = '@cf/meta/llama-3.3-70b-instruct-fp8-fast' // State-of-the-art 70B parameter model
     const response = await env.AI.run(model, {
       messages: [
         { role: 'system', content: SYSTEM_INSTRUCTION + galleryContext },

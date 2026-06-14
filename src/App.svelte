@@ -74,6 +74,18 @@
   let islandMode = $state<'collapsed' | 'presets' | 'variables' | 'export' | 'settings' | 'profile'>('collapsed')
   
   let showCodePanel = $state(false);
+  let sideCodeType = $state<'svelte-use' | 'svelte-source'>('svelte-source');
+  let sideCodeCopyState = $state<'idle' | 'copied'>('idle');
+  let sideCodeCopyTimeout: ReturnType<typeof setTimeout>;
+  function copySideCodeText(text: string) {
+    navigator.clipboard.writeText(text).then(() => {
+      sideCodeCopyState = 'copied';
+      if (sideCodeCopyTimeout) clearTimeout(sideCodeCopyTimeout);
+      sideCodeCopyTimeout = setTimeout(() => {
+        sideCodeCopyState = 'idle';
+      }, 2000);
+    });
+  }
 
   // Exporter panel sub-states
   let activeExportType = $state<'svelte-use' | 'svelte-source'>('svelte-use')
@@ -614,7 +626,7 @@ How can I help you design today?`,
 
   // --- Code Generation Helpers ---
   let generatedSvelteUseCode = $derived(generateSvelteUseCode(activePresetId, activeConfig, theme))
-  let activeComponentSource = $derived(componentSources[activePresetId] || '')
+  let activeComponentSource = $derived(activePresetId === 'custom' ? customSvelteCode : (componentSources[activePresetId] || ''))
 </script>
 
 <div class="flex h-dvh w-screen overflow-hidden bg-[var(--bg-studio)] text-[var(--text-primary)] transition-colors duration-500 relative">
@@ -728,7 +740,7 @@ How can I help you design today?`,
   </div>
 
   <!-- TOP RIGHT ACTION BAR -->
-  <div class="fixed top-4 right-4 z-20 flex gap-2 pointer-events-auto">
+  <div class="fixed top-4 right-4 z-35 flex gap-2 pointer-events-auto">
     <!-- Code Panel Toggle -->
     <button 
       class="p-2.5 rounded-full bg-white/20 dark:bg-black/35 backdrop-blur-md border border-white/10 dark:border-white/5 text-neutral-800 dark:text-neutral-200 hover:bg-white/30 dark:hover:bg-black/50 transition-all cursor-pointer flex items-center justify-center shadow-lg {showCodePanel ? 'bg-blue-600/20 text-blue-500 border-blue-500/30' : ''}"
@@ -777,7 +789,7 @@ How can I help you design today?`,
   {#if showChat}
     <div 
       bind:this={chatFeedContainer}
-      class="fixed left-1/2 -translate-x-1/2 z-20 w-[92%] max-w-2xl overflow-y-auto scrollbar-none pointer-events-auto flex flex-col gap-4 p-4 select-text transition-all duration-300"
+      class="fixed left-1/2 -translate-x-1/2 z-20 w-[92%] max-w-2xl overflow-y-auto scrollbar-none pointer-events-auto flex flex-col gap-4 p-4 select-text transition-[bottom,max-height] duration-300"
       style="bottom: {commandCenterHeight + 20}px; max-height: calc(100vh - {commandCenterHeight + 32}px);"
       transition:fly={{ y: 20, duration: 250 }}
     >
@@ -1721,6 +1733,75 @@ How can I help you design today?`,
       </div>
     </div>
   </div>
+
+  <!-- Sliding Side Code Panel -->
+  {#if showCodePanel}
+    <div 
+      class="fixed top-0 right-0 h-full w-[450px] max-w-[90vw] z-40 bg-neutral-900/95 dark:bg-black/95 backdrop-blur-2xl border-l border-neutral-200/20 dark:border-white/10 shadow-2xl flex flex-col text-left pointer-events-auto"
+      transition:fly={{ x: 450, duration: 300, opacity: 1 }}
+    >
+      <!-- Header -->
+      <div class="p-4 border-b border-neutral-200/20 dark:border-white/10 flex items-center justify-between">
+        <div class="flex items-center gap-2">
+          <Code size={16} class="text-blue-500" />
+          <h3 class="text-xs font-bold text-neutral-800 dark:text-white capitalize">
+            {activePresetId} Code
+          </h3>
+        </div>
+        <button 
+          class="p-1.5 rounded-full hover:bg-neutral-900/10 dark:hover:bg-white/10 text-neutral-500 dark:text-neutral-400 transition-colors cursor-pointer flex items-center justify-center"
+          onclick={() => showCodePanel = false}
+          aria-label="Close code panel"
+        >
+          <X size={16} />
+        </button>
+      </div>
+
+      <!-- Mode Selector Tabs -->
+      <div class="px-4 py-3 border-b border-neutral-200/20 dark:border-white/10 flex gap-2">
+        <button 
+          class="flex-1 py-1.5 text-[10px] font-bold rounded-lg border transition-all cursor-pointer text-center
+            {sideCodeType === 'svelte-source'
+              ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+              : 'bg-white/5 dark:bg-white/5 border-neutral-200/20 dark:border-white/5 text-neutral-700 dark:text-neutral-300 hover:bg-white/10 dark:hover:bg-white/10'}"
+          onclick={() => sideCodeType = 'svelte-source'}
+        >
+          Standalone Component
+        </button>
+        <button 
+          class="flex-1 py-1.5 text-[10px] font-bold rounded-lg border transition-all cursor-pointer text-center
+            {sideCodeType === 'svelte-use'
+              ? 'bg-blue-600 text-white border-blue-600 shadow-sm'
+              : 'bg-white/5 dark:bg-white/5 border-neutral-200/20 dark:border-white/5 text-neutral-700 dark:text-neutral-300 hover:bg-white/10 dark:hover:bg-white/10'}"
+          onclick={() => sideCodeType = 'svelte-use'}
+        >
+          How to Use
+        </button>
+      </div>
+
+      <!-- Code Viewer -->
+      <div class="flex-1 overflow-hidden p-4 select-text relative">
+        <!-- Copy Button overlay -->
+        <div class="absolute right-6 top-6 z-10">
+          <button 
+            class="p-2 rounded-xl bg-neutral-900/80 dark:bg-black/80 backdrop-blur-md border border-neutral-200/20 dark:border-white/10 hover:bg-neutral-900 dark:hover:bg-black text-neutral-300 hover:text-white transition-all cursor-pointer flex items-center gap-1.5 shadow-md"
+            onclick={() => copySideCodeText(sideCodeType === 'svelte-use' ? generatedSvelteUseCode : activeComponentSource)}
+            title="Copy to clipboard"
+          >
+            {#if sideCodeCopyState === 'copied'}
+              <Check size={12} class="text-emerald-500 animate-pulse" />
+              <span class="text-[9px] font-bold text-emerald-400">Copied!</span>
+            {:else}
+              <Copy size={12} />
+              <span class="text-[9px] font-bold">Copy</span>
+            {/if}
+          </button>
+        </div>
+
+        <pre class="w-full h-full overflow-auto p-3.5 rounded-xl bg-black/45 border border-neutral-200/15 dark:border-white/5 text-[10px] font-mono text-neutral-300 leading-relaxed select-all scrollbar-none"><code class="select-all">{sideCodeType === 'svelte-use' ? generatedSvelteUseCode : activeComponentSource}</code></pre>
+      </div>
+    </div>
+  {/if}
 
   <!-- Save Preset Modal -->
   {#if showSaveModal}
